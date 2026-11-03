@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Terre Scoperte</title>
+<style>
+/* Layout: mappa a schermo intero, nebbia scura ovunque, blocchi accesi dove sei stato. */
+:root{
+  --void:#0c1117;
+  --panel:rgba(17,23,30,.92);
+  --line:rgba(255,255,255,.14);
+  --fg:#e9eff3;
+  --muted:#97a5b0;
+  --grass:#8bd17c;
+  --amber:#ffb454;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--void);color:var(--fg);
+  font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:fixed;left:0;right:0;pointer-events:none;
+  padding-left:max(12px,env(safe-area-inset-left,0px));
+  padding-right:max(12px,env(safe-area-inset-right,0px))}
+.top{top:0;padding-top:max(12px,env(safe-area-inset-top,0px));display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.stats{display:flex;gap:18px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;pointer-events:auto;min-width:0}
+.stat{min-width:0}
+.stat b{display:block;font:600 18px/1.15 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lcol{display:flex;flex-direction:column;gap:6px;min-width:0}
+.gps{align-self:flex-start;font-size:12px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 8px;pointer-events:auto}
+.attr{font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 7px;pointer-events:auto}
+.attr a{color:inherit}
+.bottom{bottom:0;padding-bottom:max(14px,env(safe-area-inset-bottom,0px));display:flex;gap:10px;justify-content:center;align-items:center}
+.btn{pointer-events:auto;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:10px;
+  padding:12px 16px;font:inherit;font-weight:600;cursor:pointer;min-height:44px}
+.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.btn.primary{background:var(--grass);color:#0d1a0b;border-color:transparent}
+.btn.on{border-color:var(--amber);color:var(--amber)}
+.btn.danger{color:#ff9a8a}
+.zoom{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;
+  right:max(12px,env(safe-area-inset-right,0px))}
+.zoom .btn{width:44px;padding:0;font-size:22px;line-height:1}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--panel);border-top:1px solid var(--line);
+  border-radius:14px 14px 0 0;padding:16px max(16px,env(safe-area-inset-right,0px)) max(18px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  transform:translateY(105%);transition:transform .2s ease;max-width:520px;margin:0 auto}
+.sheet.open{transform:none}
+.sheet h2{margin:0 0 12px;font-size:17px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.row label{flex:1;min-width:0}
+.row small{display:block;color:var(--muted);font-size:12px}
+select{background:#18212b;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
+.actions{display:flex;flex-wrap:wrap;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+.actions .btn{flex:1 1 auto;padding:10px 12px}
+.note{color:var(--muted);font-size:12px;margin:10px 0 0}
+.intro{position:fixed;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;
+  padding:24px max(24px,env(safe-area-inset-right,0px)) 24px max(24px,env(safe-area-inset-left,0px));background:rgba(12,17,23,.78)}
+.card{max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.card h1{margin:0 0 8px;font-size:24px;letter-spacing:.01em;text-wrap:balance}
+.card p{margin:0 0 14px;color:#c4cfd7}
+.card .stack{display:flex;flex-direction:column;gap:8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);z-index:6;max-width:min(92vw,420px);text-align:center;
+  bottom:calc(76px + env(safe-area-inset-bottom,0px));background:#1d2833;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.sheet,.toast{transition:none}}
+@media (max-width:380px){.stats{gap:12px;padding:8px 10px}.stat b{font-size:16px}}
+</style>
+</head>
+<body>
+<canvas id="map" aria-label="Mappa dei luoghi esplorati"></canvas>
+
+<div class="hud top">
+  <div class="lcol">
+  <div class="stats" id="stats">
+    <div class="stat"><b id="sCells">0</b><span>Blocchi</span></div>
+    <div class="stat"><b id="sArea">0 m²</b><span>Superficie</span></div>
+    <div class="stat"><b id="sDist">0 m</b><span>Cammino</span></div>
+  </div>
+  <div class="gps" id="gps">GPS fermo</div>
+  </div>
+  <div class="attr" id="attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div>
+</div>
+
+<div class="zoom">
+  <button class="btn" id="zIn" aria-label="Avvicina">+</button>
+  <button class="btn" id="zOut" aria-label="Allontana">−</button>
+</div>
+
+<div class="hud bottom">
+  <button class="btn" id="btnSettings">Opzioni</button>
+  <button class="btn primary" id="btnTrack">Avvia</button>
+  <button class="btn on" id="btnFollow">Segui</button>
+</div>
+
+<section class="sheet" id="sheet" aria-label="Opzioni">
+  <h2>Opzioni</h2>
+  <div class="row">
+    <label for="radius">Raggio di scoperta<small>Quanto si accende intorno a te</small></label>
+    <select id="radius">
+      <option value="15">15 m</option>
+      <option value="30">30 m</option>
+      <option value="60">60 m</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="tilesChk">Mappa reale nei blocchi scoperti<small>Scarica le tessere di OpenStreetMap</small></label>
+    <input type="checkbox" id="tilesChk">
+  </div>
+  <div class="row">
+    <label for="simChk">Modalità simulazione<small>Tocca la mappa per muoverti, senza GPS</small></label>
+    <input type="checkbox" id="simChk">
+  </div>
+  <div class="actions">
+    <button class="btn" id="btnExport">Esporta</button>
+    <button class="btn" id="btnImport">Importa</button>
+    <button class="btn danger" id="btnReset">Azzera</button>
+    <button class="btn" id="btnClose">Chiudi</button>
+  </div>
+  <p class="note">I dati restano su questo telefono. Esporta un file per fare una copia o passare a un altro dispositivo.</p>
+  <input type="file" id="fileIn" accept="application/json,.json" hidden>
+</section>
+
+<div class="intro" id="intro">
+  <div class="card">
+    <h1>Terre Scoperte</h1>
+    <p>Cammina e la mappa si accende blocco dopo blocco, come i chunk che generi in Minecraft. Ogni blocco misura circa 30 metri.</p>
+    <div class="stack">
+      <button class="btn primary" id="introStart">Inizia a esplorare</button>
+      <button class="btn" id="introDemo">Prova senza GPS</button>
+    </div>
+    <p class="note">Tieni lo schermo acceso mentre cammini: il browser sospende il GPS quando la pagina va in background.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var Z = 20;                 // zoom di riferimento: 1 blocco = 1 tessera z20 (256 px)
+  var CELL = 256;
+  var KEY = 'terre-scoperte-v1';
+  var VOID = '#0c1117';
+  var GRASS = '139,209,124';
+  var AMBER = '#ffb454';
+  var N20 = 256 * Math.pow(2, Z);
+
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $('map');
+  var ctx = canvas.getContext('2d');
+  var W = 0, H = 0, DPR = 1, raf = 0;
+
+  // ---------- stato ----------
+  var cellSet = new Set();
+  var xs = [], ys = [];
+  var areaM2 = 0, distance = 0;
+  var last = null, me = null;
+  var settings = { radius: 30, tiles: true };
+  var sim = false, tracking = false, follow = true;
+  var watchId = null, wake = null, saveTimer = 0;
+  var view = { cx: 0, cy: 0, z: 5.5 };
+  var isFile = location.protocol === 'file:';           // aperto come file locale: niente tessere OSM
+  function tilesOn() { return settings.tiles && !isFile; }
+
+  // ---------- geometria ----------
+  function rad(d) { return d * Math.PI / 180; }
+  function lonToX(lon) { return (lon + 180) / 360 * N20; }
+  function latToY(lat) {
+    var s = Math.sin(rad(lat));
+    return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * N20;
+  }
+  function xToLon(x) { return x / N20 * 360 - 180; }
+  function yToLat(y) {
+    var n = Math.PI - 2 * Math.PI * y / N20;
+    return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  }
+  function mpp(lat) { return 156543.03392 * Math.cos(rad(lat)) / Math.pow(2, Z); } // metri per pixel z20
+  function haversine(a, b, c, d) {
+    var R = 6371000, dLat = rad(c - a), dLon = rad(d - b);
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  function scale() { return Math.pow(2, view.z - Z); }
+  function clampZ(z) { return Math.max(5, Math.min(21, z)); }
+
+  // ---------- blocchi ----------
+  function addCell(ix, iy) {
+    var k = ix + ':' + iy;
+    if (cellSet.has(k)) return false;
+    cellSet.add(k); xs.push(ix); ys.push(iy);
+    var side = CELL * mpp(yToLat((iy + 0.5) * CELL));
+    areaM2 += side * side;
+    return true;
+  }
+
+  function reveal(lat, lon) {
+    var cx = lonToX(lon) / CELL, cy = latToY(lat) / CELL;
+    var r = settings.radius / (mpp(lat) * CELL);
+    var added = addCell(Math.floor(cx), Math.floor(cy)) ? 1 : 0;
+    var x0 = Math.floor(cx - r), x1 = Math.floor(cx + r);
+    var y0 = Math.floor(cy - r), y1 = Math.floor(cy + r);
+    for (var iy = y0; iy <= y1; iy++) {
+      for (var ix = x0; ix <= x1; ix++) {
+        var dx = ix + 0.5 - cx, dy = iy + 0.5 - cy;
+        if (dx * dx + dy * dy <= r * r && addCell(ix, iy)) added++;
+      }
+    }
+    return added;
+  }
+
+  function processFix(lat, lon, acc) {
+    if (!sim && acc > 60) return; // posizione troppo imprecisa
+    if (last) {
+      var d = haversine(last.lat, last.lon, lat, lon);
+      if (d >= 4) {
+        if (d <= 300) {
+          distance += d;
+          var step = CELL * mpp(lat) / 2;
+          var n = Math.ceil(d / step);
+          for (var i = 1; i < n; i++) {
+            var t = i / n;
+            reveal(last.lat + (lat - last.lat) * t, last.lon + (lon - last.lon) * t);
+          }
+        }
+        last = { lat: lat, lon: lon };
+      }
+    } else {
+      last = { lat: lat, lon: lon };
+    }
+    reveal(lat, lon);
+    updateUI(); requestDraw(); scheduleSave();
+  }
+
+  // ---------- salvataggio ----------
+  function serialize() {
+    var cells = new Array(xs.length);
+    for (var i = 0; i < xs.length; i++) cells[i] = xs[i] + ':' + ys[i];
+    return { v: 1, cells: cells, distance: distance, settings: settings,
+             view: { cx: view.cx, cy: view.cy, z: view.z } };
+  }
+  function save() {
+    clearTimeout(saveTimer); saveTimer = 0;
+    try { localStorage.setItem(KEY, JSON.stringify(serialize())); } catch (e) {}
+  }
+  function scheduleSave() { if (!saveTimer) saveTimer = setTimeout(save, 1500); }
+  function mergeCells(list) {
+    var n = 0;
+    for (var i = 0; i < list.length; i++) {
+      var k = String(list[i]), p = k.indexOf(':');
+      if (p < 0) continue;
+      var x = Number(k.slice(0, p)), y = Number(k.slice(p + 1));
+      if (Number.isInteger(x) && Number.isInteger(y) && addCell(x, y)) n++;
+    }
+    return n;
+  }
+  function load() {
+    var raw = null;
+    try { raw = localStorage.getItem(KEY); } catch (e) {}
+    if (!raw) return false;
+    try {
+      var d = JSON.parse(raw);
+      mergeCells(d.cells || []);
+      distance = Number(d.distance) || 0;
+      if (d.settings) {
+        if ([15, 30, 60].indexOf(d.settings.radius) >= 0) settings.radius = d.settings.radius;
+        if (typeof d.settings.tiles === 'boolean') settings.tiles = d.settings.tiles;
+      }
+      if (d.view && isFinite(d.view.cx) && isFinite(d.view.cy) && isFinite(d.view.z)) {
+        view.cx = d.view.cx; view.cy = d.view.cy; view.z = clampZ(d.view.z);
+      }
+      return xs.length > 0;
+    } catch (e) { return false; }
+  }
+
+  // ---------- tessere mappa ----------
+  var tiles = new Map();
+  function getTile(z, x, y) {
+    var k = z + '/' + x + '/' + y;
+    var t = tiles.get(k);
+    if (t) { tiles.delete(k); tiles.set(k, t); return t; }
+    t = new Image();
+    t.ready = false;
+    t.decoding = 'async';
+    t.onload = function () { t.ready = true; requestDraw(); };
+    t.onerror = function () { t.bad = true; };
+    t.src = 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
+    tiles.set(k, t);
+    if (tiles.size > 300) tiles.delete(tiles.keys().next().value);
+    return t;
+  }
+
+  function drawTiles(vis, sc) {
+    var tz = Math.max(1, Math.min(19, Math.round(view.z)));
+    var tsz = 256 * Math.pow(2, Z - tz);
+    var tpx = tsz * sc, nT = Math.pow(2, tz);
+    var need = new Set();
+    for (var j = 0; j < vis.length; j++) {
+      var i = vis[j];
+      need.add(Math.floor(xs[i] * CELL / tsz) + ':' + Math.floor(ys[i] * CELL / tsz));
+    }
+    need.forEach(function (k) {
+      var p = k.split(':'), tx = Number(p[0]), ty = Number(p[1]);
+      if (ty < 0 || ty >= nT) return;
+      var img = getTile(tz, ((tx % nT) + nT) % nT, ty);
+      if (img.ready) ctx.drawImage(img, (tx * tsz - view.cx) * sc + W / 2, (ty * tsz - view.cy) * sc + H / 2, tpx + 0.6, tpx + 0.6);
+    });
+  }
+
+  // ---------- disegno ----------
+  function requestDraw() { if (!raf) raf = requestAnimationFrame(draw); }
+
+  function draw() {
+    raf = 0;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.fillStyle = VOID;
+    ctx.fillRect(0, 0, W, H);
+
+    var sc = scale(), px = CELL * sc;
+    var minX = Math.floor((view.cx - W / 2 / sc) / CELL) - 1;
+    var maxX = Math.floor((view.cx + W / 2 / sc) / CELL) + 1;
+    var minY = Math.floor((view.cy - H / 2 / sc) / CELL) - 1;
+    var maxY = Math.floor((view.cy + H / 2 / sc) / CELL) + 1;
+
+    if (px >= 26) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (var gx = minX; gx <= maxX; gx++) {
+        var sx = Math.round((gx * CELL - view.cx) * sc + W / 2) + 0.5;
+        ctx.moveTo(sx, 0); ctx.lineTo(sx, H);
+      }
+      for (var gy = minY; gy <= maxY; gy++) {
+        var sy = Math.round((gy * CELL - view.cy) * sc + H / 2) + 0.5;
+        ctx.moveTo(0, sy); ctx.lineTo(W, sy);
+      }
+      ctx.stroke();
+    }
+
+    var vis = [];
+    for (var i = 0; i < xs.length; i++) {
+      var x = xs[i], y = ys[i];
+      if (x >= minX && x <= maxX && y >= minY && y <= maxY) vis.push(i);
+    }
+
+    if (px < 3) {
+      ctx.fillStyle = 'rgba(' + GRASS + ',0.9)';
+      var s = Math.max(2, px);
+      for (var a = 0; a < vis.length; a++) {
+        var q = vis[a];
+        ctx.fillRect((xs[q] * CELL - view.cx) * sc + W / 2, (ys[q] * CELL - view.cy) * sc + H / 2, s, s);
+      }
+    } else if (vis.length) {
+      var path = new Path2D();
+      for (var b = 0; b < vis.length; b++) {
+        var r = vis[b];
+        path.rect((xs[r] * CELL - view.cx) * sc + W / 2, (ys[r] * CELL - view.cy) * sc + H / 2, px + 0.6, px + 0.6);
+      }
+      ctx.fillStyle = 'rgba(' + GRASS + ',0.30)';
+      ctx.fill(path);
+      if (tilesOn()) {
+        ctx.save();
+        ctx.clip(path);
+        drawTiles(vis, sc);
+        ctx.fillStyle = 'rgba(12,17,23,0.16)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+        ctx.fillStyle = 'rgba(' + GRASS + ',0.10)';
+        ctx.fill(path);
+      } else {
+        ctx.fillStyle = 'rgba(' + GRASS + ',0.25)';
+        ctx.fill(path);
+      }
+      if (px >= 9) {
+        ctx.strokeStyle = 'rgba(' + GRASS + ',0.38)';
+        ctx.lineWidth = 1;
+        ctx.stroke(path);
+      }
+    }
+
+    if (me) {
+      var mx = (lonToX(me.lon) - view.cx) * sc + W / 2;
+      var my = (latToY(me.lat) - view.cy) * sc + H / 2;
+      var ar = Math.max(8, me.acc / mpp(me.lat) * sc);
+      ctx.beginPath(); ctx.arc(mx, my, ar, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,180,84,0.12)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,180,84,0.45)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI * 2);
+      ctx.fillStyle = AMBER; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = VOID; ctx.stroke();
+    }
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 3);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    requestDraw();
+  }
+
+  // ---------- interfaccia ----------
+  var toastTimer = 0;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 4200);
+  }
+
+  function setGps(msg) { $('gps').textContent = msg; }
+
+  function updateUI() {
+    $('sCells').textContent = xs.length.toLocaleString('it-IT');
+    $('sArea').textContent = areaM2 >= 1e5 ? (areaM2 / 1e6).toFixed(2).replace('.', ',') + ' km²' : Math.round(areaM2).toLocaleString('it-IT') + ' m²';
+    $('sDist').textContent = distance >= 1000 ? (distance / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(distance) + ' m';
+  }
+
+  function updateButtons() {
+    var bt = $('btnTrack');
+    bt.textContent = tracking ? 'Ferma' : 'Avvia';
+    bt.classList.toggle('primary', !tracking);
+    bt.classList.toggle('on', tracking);
+    $('btnFollow').classList.toggle('on', follow);
+    $('attr').hidden = !tilesOn();
+  }
+
+  function hideIntro() { $('intro').hidden = true; }
+
+  function zoomAt(mx, my, z) {
+    z = clampZ(z);
+    var sc = scale();
+    var wx = view.cx + (mx - W / 2) / sc, wy = view.cy + (my - H / 2) / sc;
+    view.z = z;
+    var sc2 = scale();
+    view.cx = wx - (mx - W / 2) / sc2;
+    view.cy = wy - (my - H / 2) / sc2;
+    requestDraw(); scheduleSave();
+  }
+
+  // ---------- GPS ----------
+  function requestWake() {
+    try {
+      if (tracking && navigator.wakeLock && !wake) {
+        navigator.wakeLock.request('screen').then(function (l) {
+          wake = l;
+          l.addEventListener('release', function () { wake = null; });
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  function releaseWake() {
+    try { if (wake) wake.release(); } catch (e) {}
+    wake = null;
+  }
+
+  function onPos(p) {
+    var lat = p.coords.latitude, lon = p.coords.longitude, acc = p.coords.accuracy || 20;
+    var first = !me;
+    me = { lat: lat, lon: lon, acc: acc };
+    if (first) { follow = true; view.z = Math.max(view.z, 17); }
+    setGps('GPS ±' + Math.round(acc) + ' m' + (acc > 60 ? ' · segnale debole, blocchi in pausa' : ''));
+    if (follow) { view.cx = lonToX(lon); view.cy = latToY(lat); }
+    updateButtons();
+    processFix(lat, lon, acc);
+  }
+
+  function onErr(e) {
+    setGps(e && e.code === 1 ? 'GPS: permesso negato' : e && e.code === 3 ? 'GPS: nessun segnale' : 'GPS: non disponibile');
+    if (e && e.code === 1) {
+      toast('Posizione negata. Consenti l’accesso alla posizione per questo sito nelle impostazioni del browser.');
+      stopTracking();
+    } else if (e && e.code === 3) {
+      toast('Il GPS non risponde. Prova all’aperto.');
+    } else {
+      toast('Posizione non disponibile al momento.');
+    }
+  }
+
+  function startTracking() {
+    if (sim) setSim(false);
+    if (!window.isSecureContext) {
+      toast('Il GPS funziona solo su una pagina HTTPS. Pubblica il file e aprilo da lì.');
+      return;
+    }
+    if (!('geolocation' in navigator)) { toast('Questo browser non supporta il GPS.'); return; }
+    hideIntro();
+    tracking = true;
+    setGps('GPS: in attesa del segnale…');
+    watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    requestWake();
+    updateButtons();
+  }
+
+  function stopTracking() {
+    tracking = false;
+    setGps('GPS fermo');
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    last = null;
+    releaseWake();
+    updateButtons(); save();
+  }
+
+  function setSim(on) {
+    sim = on;
+    $('simChk').checked = on;
+    if (on) {
+      stopTracking();
+      hideIntro();
+      view.z = Math.max(view.z, 15);
+      toast('Simulazione attiva: tocca la mappa per muoverti.');
+    } else {
+      last = null;
+    }
+    requestDraw();
+  }
+
+  // ---------- gesti ----------
+  var ptrs = new Map(), pinch = null, down = null;
+
+  canvas.addEventListener('pointerdown', function (e) {
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
+    if (ptrs.size === 2) {
+      var v = Array.from(ptrs.values());
+      pinch = { dist: Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y), z: view.z };
+      if (down) down.moved = true;
+    }
+  });
+
+  canvas.addEventListener('pointermove', function (e) {
+    var p = ptrs.get(e.pointerId);
+    if (!p) return;
+    var dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size === 1) {
+      var sc = scale();
+      view.cx -= dx / sc; view.cy -= dy / sc;
+      if (down && !down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) {
+        down.moved = true;
+        if (follow) { follow = false; updateButtons(); }
+      }
+      requestDraw();
+    } else if (ptrs.size === 2 && pinch) {
+      var v = Array.from(ptrs.values());
+      var dist = Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y);
+      if (pinch.dist > 0) zoomAt((v[0].x + v[1].x) / 2, (v[0].y + v[1].y) / 2, pinch.z + Math.log2(dist / pinch.dist));
+    }
+  });
+
+  function endPointer(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    var isTap = e.type === 'pointerup' && ptrs.size === 1 && down && !down.moved && performance.now() - down.t < 500;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 0) down = null;
+    if (isTap && sim) {
+      var sc = scale();
+      var wx = view.cx + (e.clientX - W / 2) / sc, wy = view.cy + (e.clientY - H / 2) / sc;
+      var lat = yToLat(wy), lon = xToLon(wx);
+      me = { lat: lat, lon: lon, acc: 6 };
+      processFix(lat, lon, 6);
+    }
+    scheduleSave();
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, view.z - e.deltaY * 0.002);
+  }, { passive: false });
+
+  // ---------- controlli ----------
+  $('zIn').addEventListener('click', function () { zoomAt(W / 2, H / 2, view.z + 1); });
+  $('zOut').addEventListener('click', function () { zoomAt(W / 2, H / 2, view.z - 1); });
+
+  $('btnFollow').addEventListener('click', function () {
+    if (!me) { toast('Avvia il tracciamento per seguire la tua posizione.'); return; }
+    follow = true;
+    view.cx = lonToX(me.lon); view.cy = latToY(me.lat);
+    updateButtons(); requestDraw();
+  });
+
+  $('btnTrack').addEventListener('click', function () { tracking ? stopTracking() : startTracking(); });
+  $('introStart').addEventListener('click', startTracking);
+  $('introDemo').addEventListener('click', function () { setSim(true); });
+
+  var sheet = $('sheet');
+  $('btnSettings').addEventListener('click', function () { sheet.classList.add('open'); });
+  $('btnClose').addEventListener('click', function () { sheet.classList.remove('open'); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') sheet.classList.remove('open'); });
+
+  $('radius').addEventListener('change', function (e) { settings.radius = Number(e.target.value); save(); });
+  $('tilesChk').addEventListener('change', function (e) { settings.tiles = e.target.checked; updateButtons(); requestDraw(); save(); });
+  $('simChk').addEventListener('change', function (e) { setSim(e.target.checked); });
+
+  $('btnExport').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(serialize())], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'terre-scoperte-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
+
+  $('btnImport').addEventListener('click', function () { $('fileIn').click(); });
+  $('fileIn').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    f.text().then(function (txt) {
+      var d = JSON.parse(txt);
+      var n = mergeCells(Array.isArray(d.cells) ? d.cells : []);
+      distance = Math.max(distance, Number(d.distance) || 0);
+      updateUI(); requestDraw(); save();
+      toast(n + ' nuovi blocchi importati.');
+    }).catch(function () { toast('File non valido.'); });
+    e.target.value = '';
+  });
+
+  var resetTimer = 0, resetArmed = false;
+  $('btnReset').addEventListener('click', function () {
+    var b = $('btnReset');
+    if (!resetArmed) {
+      resetArmed = true; b.textContent = 'Tocca ancora';
+      resetTimer = setTimeout(function () { resetArmed = false; b.textContent = 'Azzera'; }, 4000);
+      return;
+    }
+    clearTimeout(resetTimer); resetArmed = false; b.textContent = 'Azzera';
+    cellSet.clear(); xs.length = 0; ys.length = 0;
+    areaM2 = 0; distance = 0; last = null;
+    updateUI(); requestDraw(); save();
+    toast('Mappa azzerata.');
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) save();
+    else { requestWake(); requestDraw(); }
+  });
+  window.addEventListener('pagehide', save);
+  window.addEventListener('resize', resize);
+
+  // ---------- avvio ----------
+  var hadData = load();
+  if (!hadData) {
+    view.cx = lonToX(12.5); view.cy = latToY(42.5); view.z = 5.5;
+  }
+  $('radius').value = String(settings.radius);
+  $('tilesChk').checked = settings.tiles;
+  if (hadData) hideIntro();
+  resize();
+  updateUI();
+  updateButtons();
+  if (isFile) {
+    setGps('File locale: GPS e mappa reale non disponibili');
+    toast('Aperto come file locale. Per GPS e mappa reale pubblica il file su una pagina HTTPS.');
+  }
+})();
+</script>
+</body>
+</html>
