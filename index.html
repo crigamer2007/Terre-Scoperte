@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0c1117">
+<meta name="theme-color" content="#dfe7ef">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Terre Scoperte</title>
 <style>
 /* Layout: mappa a schermo intero, nebbia scura ovunque, blocchi accesi dove sei stato. */
 :root{
-  --void:#0c1117;
+  --void:#dfe7ef;
   --panel:rgba(17,23,30,.92);
   --line:rgba(255,255,255,.14);
   --fg:#e9eff3;
@@ -62,7 +62,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 .actions .btn{flex:1 1 auto;padding:10px 12px}
 .note{color:var(--muted);font-size:12px;margin:10px 0 0}
 .intro{position:fixed;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;
-  padding:24px max(24px,env(safe-area-inset-right,0px)) 24px max(24px,env(safe-area-inset-left,0px));background:rgba(12,17,23,.78)}
+  padding:24px max(24px,env(safe-area-inset-right,0px)) 24px max(24px,env(safe-area-inset-left,0px));background:rgba(223,231,239,.45)}
 .card{max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
 .card h1{margin:0 0 8px;font-size:24px;letter-spacing:.01em;text-wrap:balance}
 .card p{margin:0 0 14px;color:#c4cfd7}
@@ -81,7 +81,6 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   <div class="lcol">
   <div class="stats" id="stats">
     <div class="stat"><b id="sCells">0</b><span>Blocchi</span></div>
-    <div class="stat"><b id="sArea">0 m²</b><span>Superficie</span></div>
     <div class="stat"><b id="sDist">0 m</b><span>Cammino</span></div>
   </div>
   <div class="gps" id="gps">GPS fermo</div>
@@ -131,7 +130,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 <div class="intro" id="intro">
   <div class="card">
     <h1>Terre Scoperte</h1>
-    <p>Cammina e la mappa si accende blocco dopo blocco, come i chunk che generi in Minecraft. Ogni blocco misura circa 30 metri.</p>
+    <p>Cammina e la mappa si accende blocco dopo blocco, come i chunk che generi in Minecraft. Ogni blocco misura circa 15 metri.</p>
     <div class="stack">
       <button class="btn primary" id="introStart">Inizia a esplorare</button>
       <button class="btn" id="introDemo">Prova senza GPS</button>
@@ -146,10 +145,13 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 (function () {
   'use strict';
 
-  var Z = 20;                 // zoom di riferimento: 1 blocco = 1 tessera z20 (256 px)
-  var CELL = 256;
+  var Z = 20;                 // zoom di riferimento per le coordinate dei blocchi
+  var CELL = 142;             // lato del blocco in px z20: circa 15 m in Italia (1 px ≈ 0,106 m a 45° N)
+  var OLD_CELL = 256;         // griglia della versione precedente, usata per migrare i salvataggi
   var KEY = 'terre-scoperte-v1';
-  var VOID = '#0c1117';
+  var FOG = '#dfe7ef';
+  var INK = '#1a2430';
+  var cloudA = null, cloudB = null;
   var GRASS = '139,209,124';
   var AMBER = '#ffb454';
   var N20 = 256 * Math.pow(2, Z);
@@ -162,7 +164,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   // ---------- stato ----------
   var cellSet = new Set();
   var xs = [], ys = [];
-  var areaM2 = 0, distance = 0;
+  var distance = 0;
   var last = null, me = null;
   var settings = { radius: 30, tiles: true };
   var sim = false, tracking = false, follow = true;
@@ -198,8 +200,6 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     var k = ix + ':' + iy;
     if (cellSet.has(k)) return false;
     cellSet.add(k); xs.push(ix); ys.push(iy);
-    var side = CELL * mpp(yToLat((iy + 0.5) * CELL));
-    areaM2 += side * side;
     return true;
   }
 
@@ -245,7 +245,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   function serialize() {
     var cells = new Array(xs.length);
     for (var i = 0; i < xs.length; i++) cells[i] = xs[i] + ':' + ys[i];
-    return { v: 1, cells: cells, distance: distance, settings: settings,
+    return { v: 2, cell: CELL, cells: cells, distance: distance, settings: settings,
              view: { cx: view.cx, cy: view.cy, z: view.z } };
   }
   function save() {
@@ -253,23 +253,32 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     try { localStorage.setItem(KEY, JSON.stringify(serialize())); } catch (e) {}
   }
   function scheduleSave() { if (!saveTimer) saveTimer = setTimeout(save, 1500); }
-  function mergeCells(list) {
+  function mergeCells(list, src) {
+    src = src || CELL;
     var n = 0;
     for (var i = 0; i < list.length; i++) {
       var k = String(list[i]), p = k.indexOf(':');
       if (p < 0) continue;
       var x = Number(k.slice(0, p)), y = Number(k.slice(p + 1));
-      if (Number.isInteger(x) && Number.isInteger(y) && addCell(x, y)) n++;
+      if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
+      if (src === CELL) { if (addCell(x, y)) n++; continue; }
+      // dati da una griglia diversa: accende i blocchi nuovi che coprono quello vecchio
+      var fx0 = Math.floor(x * src / CELL), fx1 = Math.floor(((x + 1) * src - 1) / CELL);
+      var fy0 = Math.floor(y * src / CELL), fy1 = Math.floor(((y + 1) * src - 1) / CELL);
+      for (var fy = fy0; fy <= fy1; fy++) {
+        for (var fx = fx0; fx <= fx1; fx++) { if (addCell(fx, fy)) n++; }
+      }
     }
     return n;
   }
+  function srcCell(d) { return d && d.v === 2 && Number(d.cell) > 0 ? Number(d.cell) : OLD_CELL; }
   function load() {
     var raw = null;
     try { raw = localStorage.getItem(KEY); } catch (e) {}
     if (!raw) return false;
     try {
       var d = JSON.parse(raw);
-      mergeCells(d.cells || []);
+      mergeCells(d.cells || [], srcCell(d));
       distance = Number(d.distance) || 0;
       if (d.settings) {
         if ([15, 30, 60].indexOf(d.settings.radius) >= 0) settings.radius = d.settings.radius;
@@ -316,14 +325,76 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     });
   }
 
+  // ---------- nuvole ----------
+  // Texture ripetibile di rumore a più scale: base grigio-azzurra e uno strato di veli bianchi.
+  function makeClouds(seed, wisps) {
+    var S = 384, c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    var g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data;
+    var s = seed >>> 0;
+    function rnd() { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }
+    var oct = [[3, 0.50], [6, 0.28], [12, 0.14], [24, 0.08]];
+    var lat = oct.map(function (o) {
+      var arr = new Float32Array(o[0] * o[0]);
+      for (var i = 0; i < arr.length; i++) arr[i] = rnd();
+      return arr;
+    });
+    for (var y = 0; y < S; y++) {
+      for (var x = 0; x < S; x++) {
+        var v = 0;
+        for (var q = 0; q < oct.length; q++) {
+          var n = oct[q][0], a = lat[q];
+          var fx = x / S * n, fy = y / S * n;
+          var x0 = Math.floor(fx), y0 = Math.floor(fy);
+          var tx = fx - x0, ty = fy - y0;
+          tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+          var x1 = (x0 + 1) % n, y1 = (y0 + 1) % n;
+          x0 %= n; y0 %= n;
+          var p00 = a[y0 * n + x0], p10 = a[y0 * n + x1], p01 = a[y1 * n + x0], p11 = a[y1 * n + x1];
+          v += oct[q][1] * (p00 + (p10 - p00) * tx + (p01 - p00) * ty + (p00 - p10 - p01 + p11) * tx * ty);
+        }
+        var t = (v - 0.28) / 0.50;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        t = t * t * (3 - 2 * t);
+        var i4 = (y * S + x) * 4;
+        if (wisps) {
+          d[i4] = 255; d[i4 + 1] = 255; d[i4 + 2] = 255; d[i4 + 3] = Math.round(t * 190);
+        } else {
+          d[i4] = 176 + 76 * t; d[i4 + 1] = 189 + 63 * t; d[i4 + 2] = 208 + 45 * t; d[i4 + 3] = 255;
+        }
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+
+  function cloudLayer(tex, k, rate, alpha) {
+    var ox = W / 2 - (((view.cx * rate) / 16384) % 1) * k;
+    var oy = H / 2 - (((view.cy * rate) / 16384) % 1) * k;
+    var sx = (((ox % k) + k) % k) - k, sy = (((oy % k) + k) % k) - k;
+    ctx.globalAlpha = alpha;
+    for (var y = sy; y < H; y += k) {
+      for (var x = sx; x < W; x += k) ctx.drawImage(tex, x, y, k + 1, k + 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawClouds() {
+    if (!cloudA) return;
+    var k = Math.max(520, Math.min(1500, 16384 * scale()));
+    cloudLayer(cloudA, k, 1, 1);
+    cloudLayer(cloudB, k * 0.72, 1.4, 0.8);   // secondo strato, scorre un po' più veloce
+  }
+
   // ---------- disegno ----------
   function requestDraw() { if (!raf) raf = requestAnimationFrame(draw); }
 
   function draw() {
     raf = 0;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.fillStyle = VOID;
+    ctx.fillStyle = FOG;
     ctx.fillRect(0, 0, W, H);
+    drawClouds();
 
     var sc = scale(), px = CELL * sc;
     var minX = Math.floor((view.cx - W / 2 / sc) / CELL) - 1;
@@ -331,20 +402,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     var minY = Math.floor((view.cy - H / 2 / sc) / CELL) - 1;
     var maxY = Math.floor((view.cy + H / 2 / sc) / CELL) + 1;
 
-    if (px >= 26) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (var gx = minX; gx <= maxX; gx++) {
-        var sx = Math.round((gx * CELL - view.cx) * sc + W / 2) + 0.5;
-        ctx.moveTo(sx, 0); ctx.lineTo(sx, H);
-      }
-      for (var gy = minY; gy <= maxY; gy++) {
-        var sy = Math.round((gy * CELL - view.cy) * sc + H / 2) + 0.5;
-        ctx.moveTo(0, sy); ctx.lineTo(W, sy);
-      }
-      ctx.stroke();
-    }
+    // niente griglia sul vuoto: la nebbia resta pulita
 
     var vis = [];
     for (var i = 0; i < xs.length; i++) {
@@ -353,7 +411,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     }
 
     if (px < 3) {
-      ctx.fillStyle = 'rgba(' + GRASS + ',0.9)';
+      ctx.fillStyle = 'rgba(58,140,62,0.95)';
       var s = Math.max(2, px);
       for (var a = 0; a < vis.length; a++) {
         var q = vis[a];
@@ -365,7 +423,12 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
         var r = vis[b];
         path.rect((xs[r] * CELL - view.cx) * sc + W / 2, (ys[r] * CELL - view.cy) * sc + H / 2, px + 0.6, px + 0.6);
       }
-      ctx.fillStyle = 'rgba(' + GRASS + ',0.30)';
+      // alone azzurro lungo il bordo del terreno scoperto
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(86,124,196,0.10)'; ctx.lineWidth = 46; ctx.stroke(path);
+      ctx.strokeStyle = 'rgba(86,124,196,0.14)'; ctx.lineWidth = 28; ctx.stroke(path);
+      ctx.strokeStyle = 'rgba(70,108,190,0.30)'; ctx.lineWidth = 12; ctx.stroke(path);
+      ctx.fillStyle = 'rgba(' + GRASS + ',0.85)';
       ctx.fill(path);
       if (tilesOn()) {
         ctx.save();
@@ -375,9 +438,6 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
         ctx.fillRect(0, 0, W, H);
         ctx.restore();
         ctx.fillStyle = 'rgba(' + GRASS + ',0.10)';
-        ctx.fill(path);
-      } else {
-        ctx.fillStyle = 'rgba(' + GRASS + ',0.25)';
         ctx.fill(path);
       }
       if (px >= 9) {
@@ -396,7 +456,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       ctx.strokeStyle = 'rgba(255,180,84,0.45)'; ctx.lineWidth = 1; ctx.stroke();
       ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI * 2);
       ctx.fillStyle = AMBER; ctx.fill();
-      ctx.lineWidth = 2.5; ctx.strokeStyle = VOID; ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = INK; ctx.stroke();
     }
   }
 
@@ -421,7 +481,6 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   function updateUI() {
     $('sCells').textContent = xs.length.toLocaleString('it-IT');
-    $('sArea').textContent = areaM2 >= 1e5 ? (areaM2 / 1e6).toFixed(2).replace('.', ',') + ' km²' : Math.round(areaM2).toLocaleString('it-IT') + ' m²';
     $('sDist').textContent = distance >= 1000 ? (distance / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(distance) + ' m';
   }
 
@@ -467,7 +526,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     var lat = p.coords.latitude, lon = p.coords.longitude, acc = p.coords.accuracy || 20;
     var first = !me;
     me = { lat: lat, lon: lon, acc: acc };
-    if (first) { follow = true; view.z = Math.max(view.z, 17); }
+    if (first) { follow = true; view.z = Math.max(view.z, 18); }
     setGps('GPS ±' + Math.round(acc) + ' m' + (acc > 60 ? ' · segnale debole, blocchi in pausa' : ''));
     if (follow) { view.cx = lonToX(lon); view.cy = latToY(lat); }
     updateButtons();
@@ -516,7 +575,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     if (on) {
       stopTracking();
       hideIntro();
-      view.z = Math.max(view.z, 15);
+      view.z = Math.max(view.z, 17);
       toast('Simulazione attiva: tocca la mappa per muoverti.');
     } else {
       last = null;
@@ -620,7 +679,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     if (!f) return;
     f.text().then(function (txt) {
       var d = JSON.parse(txt);
-      var n = mergeCells(Array.isArray(d.cells) ? d.cells : []);
+      var n = mergeCells(Array.isArray(d.cells) ? d.cells : [], srcCell(d));
       distance = Math.max(distance, Number(d.distance) || 0);
       updateUI(); requestDraw(); save();
       toast(n + ' nuovi blocchi importati.');
@@ -638,7 +697,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     }
     clearTimeout(resetTimer); resetArmed = false; b.textContent = 'Azzera';
     cellSet.clear(); xs.length = 0; ys.length = 0;
-    areaM2 = 0; distance = 0; last = null;
+    distance = 0; last = null;
     updateUI(); requestDraw(); save();
     toast('Mappa azzerata.');
   });
@@ -658,6 +717,8 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   $('radius').value = String(settings.radius);
   $('tilesChk').checked = settings.tiles;
   if (hadData) hideIntro();
+  cloudA = makeClouds(7, false);
+  cloudB = makeClouds(19, true);
   resize();
   updateUI();
   updateButtons();
