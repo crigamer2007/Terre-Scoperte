@@ -165,6 +165,12 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   var cellSet = new Set();
   var xs = [], ys = [];
   var distance = 0;
+  var MAX_ACC = 40;           // metri: oltre questa imprecisione la posizione viene ignorata
+  var MAX_SPEED = 12;         // m/s: sopra, uno spostamento è considerato un salto del GPS
+  var STAB_ACC = 25;          // metri: precisione richiesta per considerare il GPS stabile
+  var STAB_FIXES = 3;         // posizioni buone consecutive prima di iniziare a contare
+  var stab = null, skips = 0;
+  var trailX = [], trailY = [];
   var last = null, me = null;
   var settings = { radius: 30, tiles: true };
   var sim = false, tracking = false, follow = true;
@@ -218,25 +224,37 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     return added;
   }
 
-  function processFix(lat, lon, acc) {
-    if (!sim && acc > 60) return; // posizione troppo imprecisa
+  function trailAdd(lat, lon) {
+    if (trailX.length >= 30000) { trailX.splice(0, 1000); trailY.splice(0, 1000); }
+    trailX.push(lonToX(lon)); trailY.push(latToY(lat));
+  }
+
+  function processFix(lat, lon, acc, ts) {
+    if (!sim && acc > MAX_ACC) return;                 // posizione troppo imprecisa
+    ts = ts || Date.now();
     if (last) {
       var d = haversine(last.lat, last.lon, lat, lon);
-      if (d >= 4) {
-        if (d <= 300) {
-          distance += d;
-          var step = CELL * mpp(lat) / 2;
-          var n = Math.ceil(d / step);
-          for (var i = 1; i < n; i++) {
-            var t = i / n;
-            reveal(last.lat + (lat - last.lat) * t, last.lon + (lon - last.lon) * t);
-          }
-        }
-        last = { lat: lat, lon: lon };
+      // Sotto la soglia è rumore del GPS: più la precisione è scarsa, più la soglia sale.
+      var thr = sim ? 4 : Math.max(5, acc * 0.7);
+      if (d < thr) return;
+      var dt = (ts - last.t) / 1000;
+      if (!sim && dt > 0 && d > 30 && d / dt > MAX_SPEED) {  // salto impossibile: lo scarta
+        if (++skips >= 3) { last = { lat: lat, lon: lon, t: ts }; skips = 0; }
+        return;
       }
-    } else {
-      last = { lat: lat, lon: lon };
+      skips = 0;
+      if (d <= 300) {
+        distance += d;
+        var step = CELL * mpp(lat) / 2;
+        var n = Math.ceil(d / step);
+        for (var i = 1; i < n; i++) {
+          var t = i / n;
+          reveal(last.lat + (lat - last.lat) * t, last.lon + (lon - last.lon) * t);
+        }
+      }
     }
+    last = { lat: lat, lon: lon, t: ts };
+    trailAdd(lat, lon);
     reveal(lat, lon);
     updateUI(); requestDraw(); scheduleSave();
   }
@@ -447,6 +465,18 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       }
     }
 
+    // striscia del percorso della sessione corrente
+    if (trailX.length > 1) {
+      ctx.beginPath();
+      for (var ti = 0; ti < trailX.length; ti++) {
+        var tx = (trailX[ti] - view.cx) * sc + W / 2, ty = (trailY[ti] - view.cy) * sc + H / 2;
+        if (ti === 0) ctx.moveTo(tx, ty); else ctx.lineTo(tx, ty);
+      }
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(26,36,48,0.55)'; ctx.lineWidth = 7; ctx.stroke();
+      ctx.strokeStyle = AMBER; ctx.lineWidth = 4; ctx.stroke();
+    }
+
     if (me) {
       var mx = (lonToX(me.lon) - view.cx) * sc + W / 2;
       var my = (latToY(me.lat) - view.cy) * sc + H / 2;
@@ -527,10 +557,33 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     var first = !me;
     me = { lat: lat, lon: lon, acc: acc };
     if (first) { follow = true; view.z = Math.max(view.z, 18); }
-    setGps('GPS ±' + Math.round(acc) + ' m' + (acc > 60 ? ' · segnale debole, blocchi in pausa' : ''));
     if (follow) { view.cx = lonToX(lon); view.cy = latToY(lat); }
     updateButtons();
-    processFix(lat, lon, acc);
+    var ts = p.timestamp || Date.now();
+
+    if (stab) {
+      // Fase di stabilizzazione: si vede il pallino, ma non si contano né distanza né blocchi.
+      var timedOut = Date.now() - stab.t0 > 30000 && acc <= 50;
+      if (acc <= STAB_ACC) { stab.n++; stab.lat += lat; stab.lon += lon; }
+      else if (!timedOut) { stab.n = 0; stab.lat = 0; stab.lon = 0; }
+      if (stab.n >= STAB_FIXES || timedOut) {
+        var sl = stab.n ? stab.lat / stab.n : lat, so = stab.n ? stab.lon / stab.n : lon;
+        stab = null;
+        last = { lat: sl, lon: so, t: ts };
+        trailAdd(sl, so);
+        reveal(sl, so);
+        toast(timedOut ? 'GPS pronto, ma poco preciso. Meglio all’aperto.' : 'GPS stabile. Si parte!');
+        updateUI();
+      } else {
+        setGps('GPS: stabilizzazione ' + stab.n + '/' + STAB_FIXES + ' · ±' + Math.round(acc) + ' m');
+        requestDraw();
+        return;
+      }
+    }
+
+    setGps('GPS ±' + Math.round(acc) + ' m' + (acc > MAX_ACC ? ' · segnale debole, blocchi in pausa' : ''));
+    processFix(lat, lon, acc, ts);
+    requestDraw();
   }
 
   function onErr(e) {
@@ -554,7 +607,9 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     if (!('geolocation' in navigator)) { toast('Questo browser non supporta il GPS.'); return; }
     hideIntro();
     tracking = true;
-    setGps('GPS: in attesa del segnale…');
+    last = null; skips = 0; trailX = []; trailY = [];
+    stab = { n: 0, lat: 0, lon: 0, t0: Date.now() };
+    setGps('GPS: stabilizzazione 0/' + STAB_FIXES + '…');
     watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
     requestWake();
     updateButtons();
@@ -562,6 +617,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   function stopTracking() {
     tracking = false;
+    stab = null;
     setGps('GPS fermo');
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     last = null;
@@ -574,6 +630,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     $('simChk').checked = on;
     if (on) {
       stopTracking();
+      trailX = []; trailY = []; last = null; skips = 0;
       hideIntro();
       view.z = Math.max(view.z, 17);
       toast('Simulazione attiva: tocca la mappa per muoverti.');
@@ -628,7 +685,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       var wx = view.cx + (e.clientX - W / 2) / sc, wy = view.cy + (e.clientY - H / 2) / sc;
       var lat = yToLat(wy), lon = xToLon(wx);
       me = { lat: lat, lon: lon, acc: 6 };
-      processFix(lat, lon, 6);
+      processFix(lat, lon, 6, Date.now());
     }
     scheduleSave();
   }
@@ -697,7 +754,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     }
     clearTimeout(resetTimer); resetArmed = false; b.textContent = 'Azzera';
     cellSet.clear(); xs.length = 0; ys.length = 0;
-    distance = 0; last = null;
+    distance = 0; last = null; trailX = []; trailY = [];
     updateUI(); requestDraw(); save();
     toast('Mappa azzerata.');
   });
