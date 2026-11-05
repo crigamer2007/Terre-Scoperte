@@ -114,6 +114,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     <input type="checkbox" id="tilesChk">
   </div>
   <div class="row">
+    <label for="motionChk">Sensore di movimento<small>Da fermo ignora il GPS che ballonzola</small></label>
+    <input type="checkbox" id="motionChk">
+  </div>
+  <div class="row">
     <label for="simChk">Modalità simulazione<small>Tocca la mappa per muoverti, senza GPS</small></label>
     <input type="checkbox" id="simChk">
   </div>
@@ -169,10 +173,16 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   var MAX_SPEED = 12;         // m/s: sopra, uno spostamento è considerato un salto del GPS
   var STAB_ACC = 25;          // metri: precisione richiesta per considerare il GPS stabile
   var STAB_FIXES = 3;         // posizioni buone consecutive prima di iniziare a contare
+  var MOVE_SD = 0.45;         // m/s²: oscillazione dell'accelerometro sopra cui il telefono è "in movimento"
+  var MOVE_WIN = 1500;        // ms: finestra su cui si misura l'oscillazione
+  var STILL_HOLD = 2500;      // ms senza movimento prima di dichiararsi fermi
+  var RUN_SPEED = 1.5;        // m/s: se il GPS stesso misura questa velocità, si è in movimento comunque
+  var motion = { on: false, has: false, moving: true, buf: [], lastMove: 0, t0: 0 };
+  var lastAcc = null;
   var stab = null, skips = 0;
   var trailX = [], trailY = [];
   var last = null, me = null;
-  var settings = { radius: 30, tiles: true };
+  var settings = { radius: 30, tiles: true, motion: true };
   var sim = false, tracking = false, follow = true;
   var watchId = null, wake = null, saveTimer = 0;
   var view = { cx: 0, cy: 0, z: 5.5 };
@@ -301,6 +311,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       if (d.settings) {
         if ([15, 30, 60].indexOf(d.settings.radius) >= 0) settings.radius = d.settings.radius;
         if (typeof d.settings.tiles === 'boolean') settings.tiles = d.settings.tiles;
+        if (typeof d.settings.motion === 'boolean') settings.motion = d.settings.motion;
       }
       if (d.view && isFinite(d.view.cx) && isFinite(d.view.cy) && isFinite(d.view.z)) {
         view.cx = d.view.cx; view.cy = d.view.cy; view.z = clampZ(d.view.z);
@@ -552,8 +563,74 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     wake = null;
   }
 
+  // ---------- accelerometro ----------
+  // Misura quanto oscilla l'accelerazione: camminando varia di 1-3 m/s², da fermo di meno di 0,2.
+  function onMotion(e) {
+    var a = e.accelerationIncludingGravity;
+    if (!a || a.x == null || a.y == null || a.z == null) return;
+    var now = performance.now(), buf = motion.buf;
+    motion.has = true;
+    buf.push([now, Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z)]);
+    while (buf.length && now - buf[0][0] > MOVE_WIN) buf.shift();
+    if (buf.length < 8 || now - buf[0][0] < MOVE_WIN * 0.6) return;
+    var s = 0, i;
+    for (i = 0; i < buf.length; i++) s += buf[i][1];
+    var mean = s / buf.length, v = 0;
+    for (i = 0; i < buf.length; i++) v += (buf[i][1] - mean) * (buf[i][1] - mean);
+    var sd = Math.sqrt(v / buf.length);
+    if (sd > MOVE_SD) {
+      motion.lastMove = now;
+      if (!motion.moving) { motion.moving = true; refreshGps(); }
+    } else if (motion.moving && now - motion.lastMove > STILL_HOLD) {
+      motion.moving = false; refreshGps();
+    }
+  }
+
+  function motionStart() {
+    motionStop();
+    if (!settings.motion || !('DeviceMotionEvent' in window)) return;
+    motion = { on: false, has: false, moving: true, buf: [], lastMove: performance.now(), t0: performance.now() };
+    // Si ascolta subito: dove il permesso non serve gli eventi arrivano, su iPhone iniziano dopo il consenso.
+    motion.on = true;
+    window.addEventListener('devicemotion', onMotion);
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {   // iPhone: serve il permesso esplicito
+      try {
+        DeviceMotionEvent.requestPermission().then(function (r) {
+          if (r !== 'granted') toast('Senza il sensore di movimento il GPS può ballare da fermo. Consentilo nelle impostazioni di Safari.');
+        }).catch(function () {});
+      } catch (err) {}
+    }
+  }
+
+  function motionStop() {
+    window.removeEventListener('devicemotion', onMotion);
+    motion.on = false; motion.has = false; motion.moving = true;
+  }
+
+  function isStill() { return motion.on && motion.has && !motion.moving; }
+
+  function motionLabel() {
+    if (!settings.motion) return '';
+    if (motion.has) return motion.moving ? ' · in movimento' : ' · fermo';
+    if (motion.on && performance.now() - motion.t0 > 3000) return ' · sensore movimento assente';
+    return '';
+  }
+
+  function refreshGps() {
+    if (!tracking || stab || lastAcc === null) return;
+    setGps('GPS ±' + Math.round(lastAcc) + ' m' + (lastAcc > MAX_ACC ? ' · segnale debole, blocchi in pausa' : '') + motionLabel());
+  }
+
   function onPos(p) {
     var lat = p.coords.latitude, lon = p.coords.longitude, acc = p.coords.accuracy || 20;
+    var spd = p.coords.speed;
+    lastAcc = acc;
+    // Da fermo (accelerometro quieto e GPS non in corsa) il pallino resta dov'era: il GPS che ballonzola si ignora.
+    if (!stab && last && isStill() && !(spd != null && spd >= RUN_SPEED)) {
+      me = { lat: last.lat, lon: last.lon, acc: acc };
+      refreshGps(); requestDraw();
+      return;
+    }
     var first = !me;
     me = { lat: lat, lon: lon, acc: acc };
     if (first) { follow = true; view.z = Math.max(view.z, 18); }
@@ -581,7 +658,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       }
     }
 
-    setGps('GPS ±' + Math.round(acc) + ' m' + (acc > MAX_ACC ? ' · segnale debole, blocchi in pausa' : ''));
+    refreshGps();
     processFix(lat, lon, acc, ts);
     requestDraw();
   }
@@ -607,6 +684,8 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     if (!('geolocation' in navigator)) { toast('Questo browser non supporta il GPS.'); return; }
     hideIntro();
     tracking = true;
+    lastAcc = null;
+    motionStart();                       // da qui, dentro il tocco dell'utente: su iPhone chiede il permesso
     last = null; skips = 0; trailX = []; trailY = [];
     stab = { n: 0, lat: 0, lon: 0, t0: Date.now() };
     setGps('GPS: stabilizzazione 0/' + STAB_FIXES + '…');
@@ -618,6 +697,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   function stopTracking() {
     tracking = false;
     stab = null;
+    motionStop();
     setGps('GPS fermo');
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     last = null;
@@ -719,6 +799,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   $('radius').addEventListener('change', function (e) { settings.radius = Number(e.target.value); save(); });
   $('tilesChk').addEventListener('change', function (e) { settings.tiles = e.target.checked; updateButtons(); requestDraw(); save(); });
+  $('motionChk').addEventListener('change', function (e) {
+    settings.motion = e.target.checked; save();
+    if (tracking) { settings.motion ? motionStart() : motionStop(); refreshGps(); }
+  });
   $('simChk').addEventListener('change', function (e) { setSim(e.target.checked); });
 
   $('btnExport').addEventListener('click', function () {
@@ -773,6 +857,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   }
   $('radius').value = String(settings.radius);
   $('tilesChk').checked = settings.tiles;
+  $('motionChk').checked = settings.motion;
   if (hadData) hideIntro();
   cloudA = makeClouds(7, false);
   cloudB = makeClouds(19, true);
