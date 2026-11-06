@@ -139,7 +139,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       <button class="btn primary" id="introStart">Inizia a esplorare</button>
       <button class="btn" id="introDemo">Prova senza GPS</button>
     </div>
-    <p class="note">Tieni lo schermo acceso mentre cammini: il browser sospende il GPS quando la pagina va in background.</p>
+    <p class="note" id="introNote">Tieni lo schermo acceso mentre cammini: il browser sospende il GPS quando la pagina va in background.</p>
   </div>
 </div>
 
@@ -177,7 +177,11 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   var MOVE_WIN = 1500;        // ms: finestra su cui si misura l'oscillazione
   var STILL_HOLD = 2500;      // ms senza movimento prima di dichiararsi fermi
   var RUN_SPEED = 1.5;        // m/s: se il GPS stesso misura questa velocità, si è in movimento comunque
-  var motion = { on: false, has: false, moving: true, buf: [], lastMove: 0, t0: 0 };
+  var motion = { on: false, has: false, moving: true, buf: [], lastMove: 0, t0: 0, lastEvt: 0 };
+  // Dentro l'app Android (APK) i plugin nativi sono disponibili: il GPS continua a schermo spento.
+  var NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  function plug(name) { return NATIVE && window.Capacitor.Plugins ? (window.Capacitor.Plugins[name] || null) : null; }
+  var bgId = null, sess = 0;
   var lastAcc = null;
   var stab = null, skips = 0;
   var trailX = [], trailY = [];
@@ -549,6 +553,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   // ---------- GPS ----------
   function requestWake() {
+    if (NATIVE) return;                  // nell'app il servizio in primo piano tiene vivo il GPS: lo schermo può spegnersi
     try {
       if (tracking && navigator.wakeLock && !wake) {
         navigator.wakeLock.request('screen').then(function (l) {
@@ -570,6 +575,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     if (!a || a.x == null || a.y == null || a.z == null) return;
     var now = performance.now(), buf = motion.buf;
     motion.has = true;
+    motion.lastEvt = now;
     buf.push([now, Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z)]);
     while (buf.length && now - buf[0][0] > MOVE_WIN) buf.shift();
     if (buf.length < 8 || now - buf[0][0] < MOVE_WIN * 0.6) return;
@@ -589,7 +595,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   function motionStart() {
     motionStop();
     if (!settings.motion || !('DeviceMotionEvent' in window)) return;
-    motion = { on: false, has: false, moving: true, buf: [], lastMove: performance.now(), t0: performance.now() };
+    motion = { on: false, has: false, moving: true, buf: [], lastMove: performance.now(), t0: performance.now(), lastEvt: 0 };
     // Si ascolta subito: dove il permesso non serve gli eventi arrivano, su iPhone iniziano dopo il consenso.
     motion.on = true;
     window.addEventListener('devicemotion', onMotion);
@@ -607,11 +613,15 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     motion.on = false; motion.has = false; motion.moving = true;
   }
 
-  function isStill() { return motion.on && motion.has && !motion.moving; }
+  // Il sensore conta solo se sta ancora mandando dati: a schermo spento gli eventi si fermano
+  // e lo stato "fermo" rimasto in memoria non va creduto.
+  function motionFresh() { return motion.on && motion.has && performance.now() - motion.lastEvt < 2000; }
+  function isStill() { return motionFresh() && !motion.moving; }
 
   function motionLabel() {
     if (!settings.motion) return '';
-    if (motion.has) return motion.moving ? ' · in movimento' : ' · fermo';
+    if (motionFresh()) return motion.moving ? ' · in movimento' : ' · fermo';
+    if (motion.has) return '';
     if (motion.on && performance.now() - motion.t0 > 3000) return ' · sensore movimento assente';
     return '';
   }
@@ -663,6 +673,44 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     requestDraw();
   }
 
+  function onErrNative(err) {
+    if (err && err.code === 'NOT_AUTHORIZED') {
+      var BG = plug('BackgroundGeolocation');
+      stopTracking();
+      setGps('GPS: permesso negato');
+      toast('Serve il permesso di posizione. Apro le impostazioni: consentila per questa app.');
+      if (BG && BG.openSettings) setTimeout(function () { try { BG.openSettings(); } catch (e) {} }, 1200);
+    } else {
+      setGps('GPS: non disponibile');
+      toast('Posizione non disponibile al momento.');
+    }
+  }
+
+  // Tracciamento nativo: servizio in primo piano con notifica fissa, continua a schermo spento.
+  function startNative(BG) {
+    var my = ++sess;
+    var LN = plug('LocalNotifications');
+    var ask = LN && LN.requestPermissions ? LN.requestPermissions().catch(function () {}) : Promise.resolve();
+    ask.then(function () {
+      if (my !== sess || !tracking) return;
+      return BG.addWatcher({
+        backgroundTitle: 'Terre Scoperte',
+        backgroundMessage: 'Sto registrando il tuo percorso.',
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: 0
+      }, function (loc, err) {
+        if (my !== sess) return;
+        if (err) { onErrNative(err); return; }
+        if (!loc) return;
+        onPos({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy, speed: loc.speed }, timestamp: loc.time });
+      }).then(function (id) {
+        if (my !== sess || !tracking) { try { BG.removeWatcher({ id: id }); } catch (e) {} return; }
+        bgId = id;
+      });
+    }).catch(function () { if (my === sess) onErrNative(null); });
+  }
+
   function onErr(e) {
     setGps(e && e.code === 1 ? 'GPS: permesso negato' : e && e.code === 3 ? 'GPS: nessun segnale' : 'GPS: non disponibile');
     if (e && e.code === 1) {
@@ -677,11 +725,14 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   function startTracking() {
     if (sim) setSim(false);
-    if (!window.isSecureContext) {
-      toast('Il GPS funziona solo su una pagina HTTPS. Pubblica il file e aprilo da lì.');
-      return;
+    var BGp = plug('BackgroundGeolocation');
+    if (!BGp) {
+      if (!window.isSecureContext) {
+        toast('Il GPS funziona solo su una pagina HTTPS. Pubblica il file e aprilo da lì.');
+        return;
+      }
+      if (!('geolocation' in navigator)) { toast('Questo browser non supporta il GPS.'); return; }
     }
-    if (!('geolocation' in navigator)) { toast('Questo browser non supporta il GPS.'); return; }
     hideIntro();
     tracking = true;
     lastAcc = null;
@@ -689,7 +740,8 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     last = null; skips = 0; trailX = []; trailY = [];
     stab = { n: 0, lat: 0, lon: 0, t0: Date.now() };
     setGps('GPS: stabilizzazione 0/' + STAB_FIXES + '…');
-    watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    if (BGp) startNative(BGp);
+    else watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
     requestWake();
     updateButtons();
   }
@@ -700,6 +752,12 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     motionStop();
     setGps('GPS fermo');
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    sess++;
+    if (bgId !== null) {
+      var BGs = plug('BackgroundGeolocation');
+      try { if (BGs) BGs.removeWatcher({ id: bgId }); } catch (e) {}
+      bgId = null;
+    }
     last = null;
     releaseWake();
     updateButtons(); save();
@@ -806,10 +864,22 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   $('simChk').addEventListener('change', function (e) { setSim(e.target.checked); });
 
   $('btnExport').addEventListener('click', function () {
-    var blob = new Blob([JSON.stringify(serialize())], { type: 'application/json' });
+    var json = JSON.stringify(serialize());
+    var name = 'terre-scoperte-' + new Date().toISOString().slice(0, 10) + '.json';
+    var FS = plug('Filesystem'), SH = plug('Share');
+    if (FS && SH) {
+      // Nell'app i download dal browser non funzionano: si scrive il file e si apre la condivisione di Android.
+      FS.writeFile({ path: name, data: json, directory: 'CACHE', encoding: 'utf8' }).then(function (r) {
+        return SH.share({ title: 'Terre Scoperte', text: 'Copia della mappa', url: r.uri, dialogTitle: 'Salva la copia della mappa' });
+      }).catch(function (e) {
+        if (!/cancel/i.test(String(e && (e.message || e)))) toast('Esportazione non riuscita.');
+      });
+      return;
+    }
+    var blob = new Blob([json], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'terre-scoperte-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   });
@@ -864,6 +934,9 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   resize();
   updateUI();
   updateButtons();
+  if (NATIVE) {
+    $('introNote').textContent = 'Puoi bloccare lo schermo: il tracciamento continua e resta una notifica fissa finché non premi Ferma.';
+  }
   if (isFile) {
     setGps('File locale: GPS e mappa reale non disponibili');
     toast('Aperto come file locale. Per GPS e mappa reale pubblica il file su una pagina HTTPS.');

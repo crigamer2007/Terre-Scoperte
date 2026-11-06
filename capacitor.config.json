@@ -1,0 +1,11 @@
+{
+  "appId": "it.terrescoperte.app",
+  "appName": "Terre Scoperte",
+  "webDir": "www",
+  "backgroundColor": "#dfe7ef",
+  "android": {
+    "allowMixedContent": false,
+    "useLegacyBridge": true,
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
