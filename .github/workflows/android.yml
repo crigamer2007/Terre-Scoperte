@@ -1,0 +1,82 @@
+name: Build Android app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - package.json
+      - capacitor.config.json
+      - .github/workflows/android.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Prepare web files
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Set version (each build must be newer than the previous one)
+        run: |
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n -E "versionCode|versionName" android/app/build.gradle
+
+      - name: Sync web files and plugins
+        run: npx cap sync android
+
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Using the saved signing key."
+          else
+            echo "::warning::ANDROID_KEYSTORE_B64 is missing: this APK gets a random key and cannot be installed over an older build."
+          fi
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk terre-scoperte.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terre-scoperte-apk
+          path: terre-scoperte.apk
+
+      - name: Publish download link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apk --yes --cleanup-tag || true
+          gh release create apk terre-scoperte.apk \
+            --target "${{ github.sha }}" \
+            --title "Terre Scoperte, build ${{ github.run_number }}" \
+            --notes "APK per Android. Scaricalo dal telefono e installalo."
