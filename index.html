@@ -86,6 +86,10 @@ input[type=text]{width:100%;background:#18212b;color:var(--fg);border:1px solid 
   padding:14px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .walk{display:flex;gap:12px;align-items:center;width:100%;background:#16202a;border:1px solid var(--line);border-radius:12px;
   padding:10px;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.walkwrap{position:relative}
+.walkwrap .walk{padding-right:48px}
+.walkdel{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#0c1218;color:#ff9a8a;font:700 15px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.walkdel.armed{width:auto;border-radius:17px;padding:0 10px;font-size:12px;background:#3a1a16}
 .walk canvas{width:96px;height:72px;flex:none;border-radius:8px;display:block}
 .walk .meta{flex:1;min-width:0}
 .walk .meta b{display:block;font-size:15px;line-height:1.25;overflow-wrap:anywhere}
@@ -1139,6 +1143,23 @@ h3.cap{margin:6px 0 0;font-size:12px;letter-spacing:.08em;text-transform:upperca
     var pad = big ? 22 : 9;
     var sc = Math.min((c.w - 2 * pad) / bw, (c.h - 2 * pad) / bh);
     var ox = (c.w - (maxX - minX) * sc) / 2 - minX * sc, oy = (c.h - (maxY - minY) * sc) / 2 - minY * sc;
+    if (tilesOn()) {                                        // mappa sotto al tragitto
+      var tz = Math.max(1, Math.min(19, Math.round(Z + Math.log(sc) / Math.LN2)));
+      var tsz = 256 * Math.pow(2, Z - tz), nT = Math.pow(2, tz);
+      var x0 = Math.floor((0 - ox) / sc / tsz), x1 = Math.floor((c.w - ox) / sc / tsz);
+      var y0 = Math.floor((0 - oy) / sc / tsz), y1 = Math.floor((c.h - oy) / sc / tsz);
+      for (var ty = Math.max(0, y0); ty <= Math.min(nT - 1, y1); ty++) {
+        for (var tx = x0; tx <= x1; tx++) {
+          var img = getTile(tz, ((tx % nT) + nT) % nT, ty);
+          if (img.ready) {
+            g.drawImage(img, tx * tsz * sc + ox, ty * tsz * sc + oy, tsz * sc + 0.6, tsz * sc + 0.6);
+          } else if (!img.bad) {
+            img.addEventListener('load', function () { requestAnimationFrame(function () { if (cv.isConnected) drawRoute(cv, pts, big); }); }, { once: true });
+          }
+        }
+      }
+      g.fillStyle = 'rgba(12,18,24,0.18)'; g.fillRect(0, 0, c.w, c.h);
+    }
     if (big) {                                              // griglia a blocchi dietro il tragitto
       g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 1;
       var cs = CELL * sc;
@@ -1155,7 +1176,7 @@ h3.cap{margin:6px 0 0;font-size:12px;letter-spacing:.08em;text-transform:upperca
       if (i === 0) g.moveTo(sx, sy); else g.lineTo(sx, sy);
     }
     g.lineJoin = 'round'; g.lineCap = 'round';
-    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = big ? 7 : 4.5; g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.65)'; g.lineWidth = big ? 7 : 4.5; g.stroke();
     g.strokeStyle = AMBER; g.lineWidth = big ? 3.5 : 2.2; g.stroke();
     var r = big ? 6 : 3.5, a = pts.length - 1;
     g.beginPath(); g.arc(px[0] * sc + ox, py[0] * sc + oy, r, 0, Math.PI * 2);
@@ -1231,7 +1252,22 @@ h3.cap{margin:6px 0 0;font-size:12px;letter-spacing:.08em;text-transform:upperca
       meta.appendChild(t); meta.appendChild(d); meta.appendChild(n);
       b.appendChild(cv); b.appendChild(meta);
       b.addEventListener('click', function () { openDetail(w); });
-      box.appendChild(b);
+      var wrap = document.createElement('div'), x = document.createElement('button'), xt = 0;
+      wrap.className = 'walkwrap';
+      x.type = 'button'; x.className = 'walkdel'; x.textContent = '✕'; x.setAttribute('aria-label', 'Elimina camminata');
+      x.addEventListener('click', function () {
+        if (!x.classList.contains('armed')) {
+          x.classList.add('armed'); x.textContent = 'Elimina?';
+          clearTimeout(xt);
+          xt = setTimeout(function () { x.classList.remove('armed'); x.textContent = '✕'; }, 3500);
+          return;
+        }
+        clearTimeout(xt);
+        walks = walks.filter(function (q) { return q.id !== w.id; });
+        persistWalks(); renderSaved(); toast('Camminata eliminata.');
+      });
+      wrap.appendChild(b); wrap.appendChild(x);
+      box.appendChild(wrap);
       drawRoute(cv, w.pts, false);
     });
   }
