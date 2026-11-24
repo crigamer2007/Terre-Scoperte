@@ -67,9 +67,40 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 .card h1{margin:0 0 8px;font-size:24px;letter-spacing:.01em;text-wrap:balance}
 .card p{margin:0 0 14px;color:#c4cfd7}
 .card .stack{display:flex;flex-direction:column;gap:8px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);z-index:6;max-width:min(92vw,420px);text-align:center;
+.toast{position:fixed;left:50%;transform:translateX(-50%);z-index:9;max-width:min(92vw,420px);text-align:center;
   bottom:calc(76px + env(safe-area-inset-bottom,0px));background:#1d2833;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
+.bottom{gap:8px}
+.bottom .btn{padding:12px 13px}
+input[type=text]{width:100%;background:#18212b;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;margin:0 0 12px}
+.modal{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;
+  padding:24px max(20px,env(safe-area-inset-right,0px)) 24px max(20px,env(safe-area-inset-left,0px));background:rgba(8,12,16,.62)}
+.modal .card{width:100%;max-width:380px}
+.modal .card h1{font-size:21px}
+.modal .grid{margin:0 0 14px}
+.page{position:fixed;inset:0;z-index:7;background:#0f161d;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+.page header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);
+  padding:12px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px))}
+.page header h2{flex:1;min-width:0;margin:0;font-size:17px;overflow-wrap:anywhere}
+.page .scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:10px;
+  padding:14px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.walk{display:flex;gap:12px;align-items:center;width:100%;background:#16202a;border:1px solid var(--line);border-radius:12px;
+  padding:10px;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.walk canvas{width:96px;height:72px;flex:none;border-radius:8px;display:block}
+.walk .meta{flex:1;min-width:0}
+.walk .meta b{display:block;font-size:15px;line-height:1.25;overflow-wrap:anywhere}
+.walk .meta small{display:block;color:var(--muted);font-size:12px}
+.walk .nums{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:6px;font:600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.empty{color:var(--muted);text-align:center;padding:48px 12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.kpi{background:#16202a;border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.kpi b{display:block;font:600 19px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.grid .kpi:last-child:nth-child(odd){grid-column:1/-1}
+.big{width:100%;aspect-ratio:4/3;border-radius:12px;display:block}
+.chart{width:100%;height:150px;border-radius:12px;display:block}
+.sub{color:var(--muted);font-size:13px;margin:0}
+h3.cap{margin:6px 0 0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
 @media (prefers-reduced-motion:reduce){.sheet,.toast{transition:none}}
 @media (max-width:380px){.stats{gap:12px;padding:8px 10px}.stat b{font-size:16px}}
 </style>
@@ -82,8 +113,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   <div class="stats" id="stats">
     <div class="stat"><b id="sCells">0</b><span>Blocchi</span></div>
     <div class="stat"><b id="sDist">0 m</b><span>Cammino</span></div>
+    <div class="stat"><b id="sSpeed">–</b><span>km/h</span></div>
   </div>
   <div class="gps" id="gps">GPS fermo</div>
+  <div class="gps" id="sessPill" hidden>Sessione 0:00</div>
   </div>
   <div class="attr" id="attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div>
 </div>
@@ -95,6 +128,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
 <div class="hud bottom">
   <button class="btn" id="btnSettings">Opzioni</button>
+  <button class="btn" id="btnSaved">Salvati</button>
   <button class="btn primary" id="btnTrack">Avvia</button>
   <button class="btn on" id="btnFollow">Segui</button>
 </div>
@@ -124,10 +158,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   <div class="actions">
     <button class="btn" id="btnExport">Esporta</button>
     <button class="btn" id="btnImport">Importa</button>
-    <button class="btn danger" id="btnReset">Azzera</button>
+    <button class="btn danger" id="btnReset">Azzera mappa</button>
     <button class="btn" id="btnClose">Chiudi</button>
   </div>
-  <p class="note">I dati restano su questo telefono. Esporta un file per fare una copia o passare a un altro dispositivo.</p>
+  <p class="note">I dati restano su questo telefono. Esporta un file per fare una copia di mappa e camminate salvate. "Azzera mappa" non cancella le camminate.</p>
   <input type="file" id="fileIn" accept="application/json,.json" hidden>
 </section>
 
@@ -142,6 +176,34 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     <p class="note" id="introNote">Tieni lo schermo acceso mentre cammini: il browser sospende il GPS quando la pagina va in background.</p>
   </div>
 </div>
+
+<div class="modal" id="saveDlg" hidden role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+  <div class="card">
+    <h1 id="saveTitle">Salvare il percorso?</h1>
+    <div class="grid" id="saveStats"></div>
+    <input type="text" id="walkName" maxlength="60" placeholder="Nome (facoltativo)" autocomplete="off">
+    <div class="stack">
+      <button class="btn primary" id="saveYes">Salva</button>
+      <button class="btn" id="saveNo">Non salvare</button>
+    </div>
+  </div>
+</div>
+
+<section class="page" id="savedPage" hidden aria-label="Camminate salvate">
+  <header>
+    <h2>Camminate salvate</h2>
+    <button class="btn" id="savedClose">Chiudi</button>
+  </header>
+  <div class="scroll" id="savedList"></div>
+</section>
+
+<section class="page" id="detailPage" hidden aria-label="Dettaglio camminata">
+  <header>
+    <button class="btn" id="detailBack">Indietro</button>
+    <h2 id="detailTitle"></h2>
+  </header>
+  <div class="scroll" id="detailBody"></div>
+</section>
 
 <div class="toast" id="toast" role="status"></div>
 
@@ -185,6 +247,11 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   var lastAcc = null;
   var stab = null, skips = 0;
   var trailX = [], trailY = [];
+  var WKEY = 'terre-scoperte-walks-v1';
+  var walks = [];             // camminate salvate, la più recente per prima
+  var ses = null;             // sessione di tracciamento in corso (parte a GPS stabile)
+  var pending = null;         // camminata in attesa della risposta "salvare?"
+  var tick = 0;
   var last = null, me = null;
   var settings = { radius: 30, tiles: true, motion: true };
   var sim = false, tracking = false, follow = true;
@@ -243,22 +310,90 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     trailX.push(lonToX(lon)); trailY.push(latToY(lat));
   }
 
-  function processFix(lat, lon, acc, ts) {
+  // ---------- conteggio della distanza ----------
+  // Sommare gli spostamenti tra una posizione GPS e l'altra conta anche il rumore: con un errore di 10 m
+  // ogni secondo si "percorrono" 10 m a vuoto. Per questo:
+  //  1. se il GPS fornisce la velocità (effetto Doppler, molto più precisa della posizione), la distanza
+  //     è velocità x tempo, e la posizione serve solo per il tragitto e i blocchi;
+  //  2. le posizioni senza velocità, quando le altre ce l'hanno, sono "di rete" e si scartano;
+  //  3. le posizioni passano da un filtro di Kalman, che le pesa per la precisione e scarta i salti;
+  //  4. senza velocità si conta solo uno spostamento dalla posizione filtrata oltre una soglia severa.
+  var SPD_MIN = 0.6;          // m/s: sotto questa velocità Doppler si considera "fermo"
+  var KF_Q = 3;               // m/s: quanto può spostarsi la posizione reale tra due fix (passo di una persona)
+  var prevFix = null, spdSeenAt = 0, spdBad = 0, kf = null;
+
+  function kfFilter(lat, lon, acc, ts) {
+    var r2 = Math.max(acc, 4);
+    r2 *= r2;
+    if (!kf) { kf = { lat: lat, lon: lon, v: r2, t: ts, rej: 0 }; return kf; }
+    var dt = Math.max(0, (ts - kf.t) / 1000);
+    var p = kf.v + dt * KF_Q * KF_Q;
+    var innov = haversine(kf.lat, kf.lon, lat, lon);
+    // salto incompatibile con la precisione dichiarata: scartato (dopo 2 scarti di fila si riaggancia)
+    if (innov > 20 && innov > 3 * Math.sqrt(p + r2) && kf.rej < 2) { kf.rej++; return null; }
+    kf.rej = 0;
+    var k = p / (p + r2);
+    kf.lat += k * (lat - kf.lat);
+    kf.lon += k * (lon - kf.lon);
+    kf.v = (1 - k) * p;
+    kf.t = ts;
+    return kf;
+  }
+
+  function addDist(m) {
+    distance += m;
+    if (ses) { ses.dist += m; ses.win.push([Date.now(), ses.dist]); }
+  }
+
+  function processFix(lat, lon, acc, ts, spd) {
     if (!sim && acc > MAX_ACC) return;                 // posizione troppo imprecisa
     ts = ts || Date.now();
+    var hasSpd = !sim && spd != null && isFinite(spd) && spd >= 0 && spd <= MAX_SPEED && spdBad < 3;
+    // fix senza velocità tra fix che la hanno: posizione "di rete", più sporca. Si scarta.
+    if (!sim && !hasSpd && spdBad < 3 && spdSeenAt && ts - spdSeenAt < 10000) return;
+    var prev = prevFix;
+    prevFix = { t: ts, spd: hasSpd ? spd : null };
+    if (hasSpd) spdSeenAt = ts;
+
+    // 1) distanza dalla velocità: media delle due velocità x tempo trascorso
+    var viaSpeed = false, inc = 0, vmax = 0;
+    if (hasSpd && prev) {
+      var dtp = (ts - prev.t) / 1000;
+      if (dtp > 0 && dtp <= 6) {
+        viaSpeed = true;
+        var vavg = prev.spd != null ? (spd + prev.spd) / 2 : spd;
+        vmax = prev.spd != null ? Math.max(spd, prev.spd) : spd;
+        if (vavg >= SPD_MIN) { inc = vavg * dtp; addDist(inc); updateUI(); requestDraw(); scheduleSave(); }
+      }
+    }
+
+    // 3) posizione filtrata (nella simulazione i tocchi sono già esatti)
+    if (!sim) {
+      var f = kfFilter(lat, lon, acc, ts);
+      if (!f) return;
+      lat = f.lat; lon = f.lon;
+    }
+
     if (last) {
       var d = haversine(last.lat, last.lon, lat, lon);
-      // Sotto la soglia è rumore del GPS: più la precisione è scarsa, più la soglia sale.
-      var thr = sim ? 4 : Math.max(5, acc * 0.7);
+      if (viaSpeed && inc === 0) {
+        // La velocità dice "fermo": la posizione si ignora. Se però si sposta molto per più fix di fila,
+        // la velocità non è affidabile (alcuni telefoni la danno sempre a zero): si passa alla sola posizione.
+        if (d >= Math.max(30, acc * 3)) spdBad++; else spdBad = 0;
+        return;
+      }
+      var thr = sim ? 4 : (viaSpeed ? Math.max(5, acc * 0.7) : Math.max(8, acc * 1.2));
       if (d < thr) return;
       var dt = (ts - last.t) / 1000;
-      if (!sim && dt > 0 && d > 30 && d / dt > MAX_SPEED) {  // salto impossibile: lo scarta
+      var jump = !sim && ((dt > 0 && d > 30 && d / dt > MAX_SPEED) ||            // salto impossibile
+                          (viaSpeed && d > vmax * dt * 2.5 + 25));                // più di quanto la velocità permetta
+      if (jump) {
         if (++skips >= 3) { last = { lat: lat, lon: lon, t: ts }; skips = 0; }
         return;
       }
       skips = 0;
       if (d <= 300) {
-        distance += d;
+        if (!viaSpeed) addDist(d);                      // 4) senza velocità si conta lo spostamento filtrato
         var step = CELL * mpp(lat) / 2;
         var n = Math.ceil(d / step);
         for (var i = 1; i < n; i++) {
@@ -274,11 +409,13 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   }
 
   // ---------- salvataggio ----------
-  function serialize() {
+  function serialize(withWalks) {
     var cells = new Array(xs.length);
     for (var i = 0; i < xs.length; i++) cells[i] = xs[i] + ':' + ys[i];
-    return { v: 2, cell: CELL, cells: cells, distance: distance, settings: settings,
-             view: { cx: view.cx, cy: view.cy, z: view.z } };
+    var o = { v: 2, cell: CELL, cells: cells, distance: distance, settings: settings,
+              view: { cx: view.cx, cy: view.cy, z: view.z } };
+    if (withWalks) o.walks = walks;     // le camminate stanno in una chiave a parte, ma finiscono nel file di backup
+    return o;
   }
   function save() {
     clearTimeout(saveTimer); saveTimer = 0;
@@ -526,7 +663,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   function updateUI() {
     $('sCells').textContent = xs.length.toLocaleString('it-IT');
-    $('sDist').textContent = distance >= 1000 ? (distance / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(distance) + ' m';
+    $('sDist').textContent = fmtDist(distance, 1);
   }
 
   function updateButtons() {
@@ -638,6 +775,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     // Da fermo (accelerometro quieto e GPS non in corsa) il pallino resta dov'era: il GPS che ballonzola si ignora.
     if (!stab && last && isStill() && !(spd != null && spd >= RUN_SPEED)) {
       me = { lat: last.lat, lon: last.lon, acc: acc };
+      prevFix = null;                 // ripartendo, il primo intervallo non deve coprire tutta la sosta
       refreshGps(); requestDraw();
       return;
     }
@@ -657,8 +795,11 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
         var sl = stab.n ? stab.lat / stab.n : lat, so = stab.n ? stab.lon / stab.n : lon;
         stab = null;
         last = { lat: sl, lon: so, t: ts };
+        kf = { lat: sl, lon: so, v: 25, t: ts, rej: 0 };   // il filtro riparte dalla posizione stabile
+        prevFix = null; spdSeenAt = 0; spdBad = 0;
         trailAdd(sl, so);
         reveal(sl, so);
+        sessStart();
         toast(timedOut ? 'GPS pronto, ma poco preciso. Meglio all’aperto.' : 'GPS stabile. Si parte!');
         updateUI();
       } else {
@@ -669,7 +810,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     }
 
     refreshGps();
-    processFix(lat, lon, acc, ts);
+    processFix(lat, lon, acc, ts, spd);
     requestDraw();
   }
 
@@ -738,6 +879,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     lastAcc = null;
     motionStart();                       // da qui, dentro il tocco dell'utente: su iPhone chiede il permesso
     last = null; skips = 0; trailX = []; trailY = [];
+    kf = null; prevFix = null; spdSeenAt = 0; spdBad = 0;
     stab = { n: 0, lat: 0, lon: 0, t0: Date.now() };
     setGps('GPS: stabilizzazione 0/' + STAB_FIXES + '…');
     if (BGp) startNative(BGp);
@@ -746,7 +888,9 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     updateButtons();
   }
 
-  function stopTracking() {
+  // ask = true: dopo l'arresto chiede se salvare il percorso (solo se l'utente ha premuto Ferma)
+  function stopTracking(ask) {
+    var wk = tracking ? finishSession() : null;
     tracking = false;
     stab = null;
     motionStop();
@@ -761,13 +905,14 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     last = null;
     releaseWake();
     updateButtons(); save();
+    if (ask && wk) offerSave(wk);
   }
 
   function setSim(on) {
     sim = on;
     $('simChk').checked = on;
     if (on) {
-      stopTracking();
+      stopTracking(true);
       trailX = []; trailY = []; last = null; skips = 0;
       hideIntro();
       view.z = Math.max(view.z, 17);
@@ -777,6 +922,370 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     }
     requestDraw();
   }
+
+  // ---------- formati ----------
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function fmtDist(m, dec) { return m >= 1000 ? (m / 1000).toFixed(dec).replace('.', ',') + ' km' : Math.round(m) + ' m'; }
+  function fmtDur(s) {
+    s = Math.max(0, Math.round(s));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return h ? h + ':' + pad2(m) + ':' + pad2(x) : m + ':' + pad2(x);
+  }
+  function fmtKmh(ms) { return (ms * 3.6).toFixed(1).replace('.', ','); }
+  function fmtPace(dist, dur) {
+    if (dist < 50 || dur <= 0) return '–';
+    var spk = dur / (dist / 1000), m = Math.floor(spk / 60), s = Math.round(spk % 60);
+    if (s === 60) { m++; s = 0; }
+    return m + ':' + pad2(s) + ' /km';
+  }
+  function fmtWhen(t) {
+    var d = new Date(t);
+    try {
+      return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' +
+             d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return d.toISOString().slice(0, 16).replace('T', ' '); }
+  }
+  function fmtClock(t) {
+    try { return new Date(t).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
+  }
+  function autoName(t) { return 'Camminata · ' + fmtWhen(t); }
+
+  // ---------- velocità e sessione ----------
+  // Velocità = metri contati negli ultimi secondi / tempo. Usa gli stessi spostamenti della distanza,
+  // quindi il rumore del GPS da fermo non la fa salire. Senza nuovi spostamenti scende a zero in 10-20 s.
+  var SPEED_WIN = 15000, IDLE0 = 10000, IDLE1 = 20000;
+
+  function curSpeed(now) {
+    var w = ses.win, i = w.length - 1;
+    if (i < 1) return { v: 0, dt: 0 };
+    var idle = now - w[i][0];
+    if (idle >= IDLE1) return { v: 0, dt: 0 };
+    var j = i;
+    while (j > 0 && w[j - 1][0] >= now - SPEED_WIN) j--;
+    if (j === i) j = i - 1;
+    var dt = (w[i][0] - w[j][0]) / 1000;
+    if (dt <= 0) return { v: 0, dt: 0 };
+    var v = (w[i][1] - w[j][1]) / Math.max(dt, 4);   // finestra minima di 4 s: niente picchi nei primi secondi
+    if (idle > IDLE0) v *= (IDLE1 - idle) / (IDLE1 - IDLE0);
+    return { v: v, dt: dt };
+  }
+
+  function sessStart() {
+    var t = Date.now();
+    // win parte vuota: il primo spostamento accettato fa solo da base. Il salto tra la posizione media
+    // della stabilizzazione e il primo fix vero conta nella distanza, ma non deve gonfiare la velocità.
+    ses = { t0: t, dist: 0, max: 0, win: [], series: [], next: 5 };
+    clearInterval(tick);
+    tick = setInterval(updateLive, 1000);
+    updateLive();
+  }
+
+  function updateLive() {
+    if (!ses) { $('sSpeed').textContent = '–'; $('sessPill').hidden = true; return; }
+    var now = Date.now(), el = (now - ses.t0) / 1000;
+    var c = curSpeed(now), v = c.v;
+    if (isStill() || v < 0.15) v = 0;
+    if (v > ses.max && c.dt >= 8 && v <= MAX_SPEED) ses.max = v;   // la massima conta solo su almeno 8 s di dati
+    if (el >= ses.next) {
+      ses.series.push([Math.round(el), Math.round(v * 36) / 10]);   // [secondi dall'inizio, km/h con un decimale]
+      while (ses.next <= el) ses.next += 5;
+    }
+    $('sSpeed').textContent = fmtKmh(v);
+    var p = $('sessPill');
+    p.hidden = false;
+    p.textContent = 'Sessione ' + fmtDur(el) + ' · media ' + fmtKmh(ses.dist / Math.max(el, 1)) + ' km/h';
+  }
+
+  // Douglas-Peucker: toglie i punti che stanno entro tol pixel dalla linea, per salvare un tracciato leggero.
+  function simplify(px, py, tol) {
+    var n = px.length, keep = new Uint8Array(n);
+    keep[0] = 1; keep[n - 1] = 1;
+    var stack = [[0, n - 1]];
+    while (stack.length) {
+      var s = stack.pop(), a = s[0], b = s[1];
+      var dx = px[b] - px[a], dy = py[b] - py[a], len2 = dx * dx + dy * dy, maxD = -1, idx = -1;
+      for (var i = a + 1; i < b; i++) {
+        var d;
+        if (len2 === 0) d = Math.hypot(px[i] - px[a], py[i] - py[a]);
+        else {
+          var t = ((px[i] - px[a]) * dx + (py[i] - py[a]) * dy) / len2;
+          t = Math.max(0, Math.min(1, t));
+          d = Math.hypot(px[i] - (px[a] + t * dx), py[i] - (py[a] + t * dy));
+        }
+        if (d > maxD) { maxD = d; idx = i; }
+      }
+      if (maxD > tol && idx > 0) { keep[idx] = 1; stack.push([a, idx], [idx, b]); }
+    }
+    return keep;
+  }
+
+  // Chiude la sessione e prepara la camminata da salvare. Restituisce null se non c'era sessione.
+  function finishSession() {
+    var s = ses;
+    ses = null;
+    clearInterval(tick); tick = 0;
+    updateLive();
+    if (!s) return null;
+    var end = Date.now(), dur = (end - s.t0) / 1000, n = trailX.length;
+    if (s.dist < 20 || n < 2 || dur < 10) return { tooShort: true };
+    var keep = simplify(trailX, trailY, 2.5 / mpp(yToLat(trailY[Math.floor(n / 2)])));
+    var pts = [];
+    for (var i = 0; i < n; i++) {
+      if (keep[i]) pts.push([Math.round(yToLat(trailY[i]) * 1e5) / 1e5, Math.round(xToLon(trailX[i]) * 1e5) / 1e5]);
+    }
+    var sp = s.series, step = Math.max(1, Math.ceil(sp.length / 240)), spd = [];
+    for (var k = 0; k < sp.length; k += step) spd.push(sp[k]);
+    return { id: end.toString(36) + Math.floor(Math.random() * 1e6).toString(36), name: '', t0: s.t0,
+             dur: dur, dist: s.dist, max: s.max, pts: pts, spd: spd };
+  }
+
+  // ---------- camminate salvate ----------
+  function cleanWalk(w) {
+    if (!w || typeof w !== 'object' || !Array.isArray(w.pts)) return null;
+    var pts = [], spd = [], i, p;
+    for (i = 0; i < w.pts.length; i++) {
+      p = w.pts[i];
+      if (Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])) pts.push([Number(p[0]), Number(p[1])]);
+    }
+    if (Array.isArray(w.spd)) {
+      for (i = 0; i < w.spd.length; i++) {
+        p = w.spd[i];
+        if (Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])) spd.push([Number(p[0]), Number(p[1])]);
+      }
+    }
+    var t0 = Number(w.t0), dur = Number(w.dur), dist = Number(w.dist);
+    if (pts.length < 2 || !isFinite(t0) || !(dur > 0) || !isFinite(dist)) return null;
+    return { id: String(w.id || t0), name: String(w.name || '').slice(0, 60), t0: t0, dur: dur, dist: dist,
+             max: Number(w.max) || 0, pts: pts, spd: spd };
+  }
+  function loadWalks() {
+    try {
+      var raw = localStorage.getItem(WKEY);
+      if (!raw) return;
+      var a = JSON.parse(raw);
+      if (Array.isArray(a)) walks = a.map(cleanWalk).filter(Boolean);
+    } catch (e) {}
+  }
+  function persistWalks() {
+    try { localStorage.setItem(WKEY, JSON.stringify(walks)); return true; } catch (e) { return false; }
+  }
+  function mergeWalks(list) {
+    var have = {}, n = 0;
+    walks.forEach(function (w) { have[w.id] = 1; });
+    list.forEach(function (raw) {
+      var w = cleanWalk(raw);
+      if (w && !have[w.id]) { walks.push(w); have[w.id] = 1; n++; }
+    });
+    if (n) { walks.sort(function (a, b) { return b.t0 - a.t0; }); persistWalks(); }
+    return n;
+  }
+
+  function kpi(label, value) {
+    var d = document.createElement('div'), b = document.createElement('b'), s = document.createElement('span');
+    d.className = 'kpi'; b.textContent = value; s.textContent = label;
+    d.appendChild(b); d.appendChild(s);
+    return d;
+  }
+  function addStats(grid, w) {
+    grid.appendChild(kpi('Distanza', fmtDist(w.dist, 2)));
+    grid.appendChild(kpi('Durata', fmtDur(w.dur)));
+    grid.appendChild(kpi('Vel. media', fmtKmh(w.dist / w.dur) + ' km/h'));
+    grid.appendChild(kpi('Vel. max', w.max > 0 ? fmtKmh(w.max) + ' km/h' : '–'));
+  }
+
+  function offerSave(w) {
+    if (w.tooShort) { toast('Percorso troppo breve: non viene salvato.'); return; }
+    pending = w;
+    var box = $('saveStats');
+    box.textContent = '';
+    addStats(box, w);
+    $('walkName').value = '';
+    $('walkName').placeholder = autoName(w.t0);
+    $('saveDlg').hidden = false;
+  }
+  $('saveYes').addEventListener('click', function () {
+    var w = pending;
+    if (!w) return;
+    w.name = $('walkName').value.trim().slice(0, 60) || autoName(w.t0);
+    pending = null;
+    $('saveDlg').hidden = true;
+    walks.unshift(w);
+    toast(persistWalks() ? 'Percorso salvato. Lo trovi in Salvati.' : 'Non riesco a salvare: lo spazio del telefono è pieno.');
+  });
+  $('saveNo').addEventListener('click', function () {
+    pending = null;
+    $('saveDlg').hidden = true;
+  });
+
+  // ---------- disegno di tragitto e grafico ----------
+  function setupCanvas(cv, dw, dh) {
+    var dpr = Math.min(window.devicePixelRatio || 1, 3);
+    var w = cv.clientWidth || dw, h = cv.clientHeight || dh;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#0c1218';
+    g.fillRect(0, 0, w, h);
+    return { g: g, w: w, h: h };
+  }
+
+  function drawRoute(cv, pts, big) {
+    var c = setupCanvas(cv, 96, 72), g = c.g, i;
+    var px = [], py = [];
+    for (i = 0; i < pts.length; i++) { px.push(lonToX(pts[i][1])); py.push(latToY(pts[i][0])); }
+    var minX = Math.min.apply(null, px), maxX = Math.max.apply(null, px);
+    var minY = Math.min.apply(null, py), maxY = Math.max.apply(null, py);
+    var bw = Math.max(maxX - minX, 60), bh = Math.max(maxY - minY, 60);   // percorsi minuscoli non vengono ingranditi all'infinito
+    var pad = big ? 22 : 9;
+    var sc = Math.min((c.w - 2 * pad) / bw, (c.h - 2 * pad) / bh);
+    var ox = (c.w - (maxX - minX) * sc) / 2 - minX * sc, oy = (c.h - (maxY - minY) * sc) / 2 - minY * sc;
+    if (big) {                                              // griglia a blocchi dietro il tragitto
+      g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 1;
+      var cs = CELL * sc;
+      if (cs > 12) {
+        g.beginPath();
+        for (var x = ((ox % cs) + cs) % cs; x < c.w; x += cs) { g.moveTo(Math.round(x) + 0.5, 0); g.lineTo(Math.round(x) + 0.5, c.h); }
+        for (var y = ((oy % cs) + cs) % cs; y < c.h; y += cs) { g.moveTo(0, Math.round(y) + 0.5); g.lineTo(c.w, Math.round(y) + 0.5); }
+        g.stroke();
+      }
+    }
+    g.beginPath();
+    for (i = 0; i < pts.length; i++) {
+      var sx = px[i] * sc + ox, sy = py[i] * sc + oy;
+      if (i === 0) g.moveTo(sx, sy); else g.lineTo(sx, sy);
+    }
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = big ? 7 : 4.5; g.stroke();
+    g.strokeStyle = AMBER; g.lineWidth = big ? 3.5 : 2.2; g.stroke();
+    var r = big ? 6 : 3.5, a = pts.length - 1;
+    g.beginPath(); g.arc(px[0] * sc + ox, py[0] * sc + oy, r, 0, Math.PI * 2);
+    g.fillStyle = 'rgb(' + GRASS + ')'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#0c1218'; g.stroke();
+    g.beginPath(); g.arc(px[a] * sc + ox, py[a] * sc + oy, r, 0, Math.PI * 2);
+    g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = AMBER; g.stroke();
+  }
+
+  function niceMax(v) {
+    var steps = [2, 4, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 80, 100];
+    for (var i = 0; i < steps.length; i++) if (steps[i] >= v * 1.1) return steps[i];
+    return Math.ceil(v * 1.1);
+  }
+
+  function drawSpeed(cv, w) {
+    var c = setupCanvas(cv, 320, 150), g = c.g, s = w.spd, i;
+    var L = 34, R = 12, T = 14, B = 24;
+    var avg = w.dist / w.dur * 3.6, peak = avg;
+    for (i = 0; i < s.length; i++) if (s[i][1] > peak) peak = s[i][1];
+    var yMax = niceMax(peak), tMax = Math.max(w.dur, s[s.length - 1][0], 1);
+    function X(t) { return L + (c.w - L - R) * Math.min(1, t / tMax); }
+    function Y(v) { return T + (c.h - T - B) * (1 - Math.min(v, yMax) / yMax); }
+    g.font = '11px system-ui, sans-serif';
+    g.fillStyle = '#97a5b0'; g.strokeStyle = 'rgba(255,255,255,0.09)'; g.lineWidth = 1;
+    g.textAlign = 'right'; g.textBaseline = 'middle';
+    [0, yMax / 2, yMax].forEach(function (v) {
+      var y = Math.round(Y(v)) + 0.5;
+      g.beginPath(); g.moveTo(L, y); g.lineTo(c.w - R, y); g.stroke();
+      g.fillText(String(Math.round(v * 10) / 10).replace('.', ','), L - 6, y);
+    });
+    g.textBaseline = 'alphabetic';
+    g.textAlign = 'left';  g.fillText('0:00', L, c.h - 6);
+    g.textAlign = 'right'; g.fillText(fmtDur(tMax), c.w - R, c.h - 6);
+    if (s.length > 1) {
+      g.beginPath(); g.moveTo(X(s[0][0]), Y(0));
+      for (i = 0; i < s.length; i++) g.lineTo(X(s[i][0]), Y(s[i][1]));
+      g.lineTo(X(s[s.length - 1][0]), Y(0)); g.closePath();
+      g.fillStyle = 'rgba(255,180,84,0.18)'; g.fill();
+      g.beginPath();
+      for (i = 0; i < s.length; i++) { if (i === 0) g.moveTo(X(s[i][0]), Y(s[i][1])); else g.lineTo(X(s[i][0]), Y(s[i][1])); }
+      g.lineJoin = 'round'; g.strokeStyle = AMBER; g.lineWidth = 2; g.stroke();
+    }
+    g.setLineDash([5, 4]); g.strokeStyle = 'rgba(' + GRASS + ',0.9)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(L, Y(avg)); g.lineTo(c.w - R, Y(avg)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = 'rgb(' + GRASS + ')'; g.textAlign = 'right'; g.textBaseline = 'bottom';
+    g.fillText('media ' + String(Math.round(avg * 10) / 10).replace('.', ','), c.w - R - 2, Y(avg) - 3);
+  }
+
+  // ---------- schede Salvati e dettaglio ----------
+  function openSaved() { renderSaved(); $('savedPage').hidden = false; }
+
+  function renderSaved() {
+    var box = $('savedList');
+    box.textContent = '';
+    if (!walks.length) {
+      var e = document.createElement('p');
+      e.className = 'empty';
+      e.textContent = 'Nessuna camminata salvata. Quando premi Ferma, l’app ti chiede se salvare il percorso.';
+      box.appendChild(e);
+      return;
+    }
+    walks.forEach(function (w) {
+      var b = document.createElement('button'), cv = document.createElement('canvas');
+      var meta = document.createElement('div'), t = document.createElement('b'), d = document.createElement('small'), n = document.createElement('div');
+      b.type = 'button'; b.className = 'walk';
+      meta.className = 'meta'; n.className = 'nums';
+      t.textContent = w.name || autoName(w.t0);
+      d.textContent = fmtWhen(w.t0);
+      [fmtDist(w.dist, 2), fmtDur(w.dur), fmtKmh(w.dist / w.dur) + ' km/h'].forEach(function (x) {
+        var s = document.createElement('span'); s.textContent = x; n.appendChild(s);
+      });
+      meta.appendChild(t); meta.appendChild(d); meta.appendChild(n);
+      b.appendChild(cv); b.appendChild(meta);
+      b.addEventListener('click', function () { openDetail(w); });
+      box.appendChild(b);
+      drawRoute(cv, w.pts, false);
+    });
+  }
+
+  var delTimer = 0;
+  function openDetail(w) {
+    $('detailTitle').textContent = w.name || autoName(w.t0);
+    var body = $('detailBody');
+    body.textContent = '';
+    $('detailPage').hidden = false;
+    var cv = document.createElement('canvas');
+    cv.className = 'big';
+    body.appendChild(cv);
+    var when = document.createElement('p');
+    when.className = 'sub';
+    when.textContent = fmtWhen(w.t0) + ' → ' + fmtClock(w.t0 + w.dur * 1000);
+    body.appendChild(when);
+    var grid = document.createElement('div');
+    grid.className = 'grid';
+    addStats(grid, w);
+    grid.appendChild(kpi('Passo medio', fmtPace(w.dist, w.dur)));
+    body.appendChild(grid);
+    var sc = null;
+    if (w.spd.length > 1) {
+      var h = document.createElement('h3');
+      h.className = 'cap'; h.textContent = 'Velocità nel tempo (km/h)';
+      sc = document.createElement('canvas'); sc.className = 'chart';
+      body.appendChild(h); body.appendChild(sc);
+    }
+    var del = document.createElement('button');
+    del.type = 'button'; del.className = 'btn danger'; del.textContent = 'Elimina camminata';
+    var armed = false;
+    del.addEventListener('click', function () {
+      if (!armed) {
+        armed = true; del.textContent = 'Tocca ancora per eliminare';
+        clearTimeout(delTimer);
+        delTimer = setTimeout(function () { armed = false; del.textContent = 'Elimina camminata'; }, 4000);
+        return;
+      }
+      clearTimeout(delTimer);
+      walks = walks.filter(function (x) { return x.id !== w.id; });
+      persistWalks();
+      $('detailPage').hidden = true;
+      renderSaved();
+      toast('Camminata eliminata.');
+    });
+    body.appendChild(del);
+    drawRoute(cv, w.pts, true);
+    if (sc) drawSpeed(sc, w);
+  }
+
+  $('btnSaved').addEventListener('click', openSaved);
+  $('savedClose').addEventListener('click', function () { $('savedPage').hidden = true; });
+  $('detailBack').addEventListener('click', function () { $('detailPage').hidden = true; });
 
   // ---------- gesti ----------
   var ptrs = new Map(), pinch = null, down = null;
@@ -846,7 +1355,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     updateButtons(); requestDraw();
   });
 
-  $('btnTrack').addEventListener('click', function () { tracking ? stopTracking() : startTracking(); });
+  $('btnTrack').addEventListener('click', function () { tracking ? stopTracking(true) : startTracking(); });
   $('introStart').addEventListener('click', startTracking);
   $('introDemo').addEventListener('click', function () { setSim(true); });
 
@@ -864,7 +1373,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
   $('simChk').addEventListener('change', function (e) { setSim(e.target.checked); });
 
   $('btnExport').addEventListener('click', function () {
-    var json = JSON.stringify(serialize());
+    var json = JSON.stringify(serialize(true));
     var name = 'terre-scoperte-' + new Date().toISOString().slice(0, 10) + '.json';
     var FS = plug('Filesystem'), SH = plug('Share');
     if (FS && SH) {
@@ -892,8 +1401,9 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
       var d = JSON.parse(txt);
       var n = mergeCells(Array.isArray(d.cells) ? d.cells : [], srcCell(d));
       distance = Math.max(distance, Number(d.distance) || 0);
+      var nw = Array.isArray(d.walks) ? mergeWalks(d.walks) : 0;
       updateUI(); requestDraw(); save();
-      toast(n + ' nuovi blocchi importati.');
+      toast(n + ' nuovi blocchi' + (nw ? ' e ' + nw + (nw === 1 ? ' camminata' : ' camminate') : '') + ' importati.');
     }).catch(function () { toast('File non valido.'); });
     e.target.value = '';
   });
@@ -903,10 +1413,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
     var b = $('btnReset');
     if (!resetArmed) {
       resetArmed = true; b.textContent = 'Tocca ancora';
-      resetTimer = setTimeout(function () { resetArmed = false; b.textContent = 'Azzera'; }, 4000);
+      resetTimer = setTimeout(function () { resetArmed = false; b.textContent = 'Azzera mappa'; }, 4000);
       return;
     }
-    clearTimeout(resetTimer); resetArmed = false; b.textContent = 'Azzera';
+    clearTimeout(resetTimer); resetArmed = false; b.textContent = 'Azzera mappa';
     cellSet.clear(); xs.length = 0; ys.length = 0;
     distance = 0; last = null; trailX = []; trailY = [];
     updateUI(); requestDraw(); save();
@@ -922,6 +1432,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:#8bd17c}
 
   // ---------- avvio ----------
   var hadData = load();
+  loadWalks();
   if (!hadData) {
     view.cx = lonToX(12.5); view.cy = latToY(42.5); view.z = 5.5;
   }
